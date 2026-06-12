@@ -1,15 +1,24 @@
 'use client'
 
-import { Search, Bell } from 'lucide-react'
+import { Search, Bell, Menu } from 'lucide-react'
 import { useRole } from '@/components/role-context'
 import { cn } from '@/lib/utils'
 
-export function Topbar() {
+export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const { role, setRole } = useRole()
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-white/10 bg-background/60 px-8 backdrop-blur-xl">
-      <div className="relative flex-1 max-w-md">
+    <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-white/10 bg-background/60 px-4 backdrop-blur-xl md:px-8">
+      <button
+        type="button"
+        onClick={onMenuClick}
+        className="inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground md:hidden"
+        aria-label="Open menu"
+      >
+        <Menu className="size-5" aria-hidden="true" />
+      </button>
+
+      <div className="relative hidden max-w-md flex-1 sm:flex">
         <Search
           className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden="true"
