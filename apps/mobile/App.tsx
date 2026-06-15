@@ -1,38 +1,28 @@
-import React from 'react';
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
-import { AuthProvider } from './src/context/AuthContext';
-import { NotificationProvider } from './src/context/NotificationContext';
+import React from "react";
+import { SafeAreaView, StyleSheet, StatusBar } from "react-native";
+import { AuthProvider } from "./src/context/AuthContext";
+import { NotificationProvider } from "./src/context/NotificationContext";
+import { DebugScreen } from "./src/screens/DebugScreen";
 
 export default function App() {
+  const demoPetId = "9db449be-4698-43fa-9dcc-7b3f81b89ff8";
+  const demoPetName = "Luna";
+
   return (
     <AuthProvider>
       <NotificationProvider>
-        <View style={styles.container}>
-          <Text style={styles.title}>PetPulse AI Ecosystem</Text>
-          <Text style={styles.subtitle}>Push Notification Relay Active</Text>
-          <StatusBar style="auto" />
-        </View>
+        <SafeAreaView style={styles.root}>
+          <StatusBar barStyle="light-content" backgroundColor="#04060e" />
+          <DebugScreen petId={demoPetId} petName={demoPetName} />
+        </SafeAreaView>
       </NotificationProvider>
     </AuthProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#64748b',
+    backgroundColor: "#04060e",
   },
 });

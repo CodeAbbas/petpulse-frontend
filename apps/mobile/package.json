@@ -5,6 +5,7 @@
   "dependencies": {
     "axios": "^1.17.0",
     "expo": "~56.0.11",
+    "expo-dev-client": "~56.0.20",
     "expo-device": "~56.0.4",
     "expo-notifications": "~56.0.17",
     "expo-secure-store": "~56.0.4",
@@ -18,9 +19,11 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "build:ios": "eas build --platform ios --profile development",
+    "build:android": "eas build --platform android --profile development"
   },
   "private": true
 }
