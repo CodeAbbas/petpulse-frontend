@@ -1,29 +1,29 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true
-    },
+    "name": "PetPulse",
+    "slug": "petpulse-mobile",
     "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.mobile"
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
+      "package": "com.petpulse.mobile",
+      "googleServicesFile": "./google-services.json",
+      "useNextNotificationsApi": true,
+      "permissions": [
+        "NOTIFICATIONS",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "plugins": [
-      "expo-secure-store"
-    ]
+      [
+        "expo-notifications",
+        {
+          "color": "#0ea5e9",
+          "defaultChannel": "default"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "029bf8ef-f810-488b-83aa-757835320743"
+      }
+    }
   }
 }
