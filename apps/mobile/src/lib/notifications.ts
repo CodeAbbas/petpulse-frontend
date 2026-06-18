@@ -3,6 +3,23 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { api } from "./api";
 
+/**
+ * Register the Android notification channel at app startup, before any
+ * push can arrive. Must run independently of authentication — a channel
+ * referenced by an incoming FCM message must already exist or Android
+ * (8.0+) silently drops the notification, including in killed state.
+ */
+export async function ensureNotificationChannel(): Promise<void> {
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("default", {
+      name: "PetPulse Alerts",
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#0ea5e9",
+    });
+  }
+}
+
 // Foreground display behaviour: show the alert even when the app is open.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -56,4 +73,16 @@ export async function registerForPushNotifications(): Promise<string | null> {
   }
 
   return deviceToken;
+}
+/**
+ * Retrieve the notification that cold-started the app from a killed state
+ * (user tapped a push while the app was not running). Returns the parsed
+ * alert data, or null if the app was launched normally.
+ */
+export async function getInitialNotification(): Promise<Record<string, string> | null> {
+  const response = await Notifications.getLastNotificationResponseAsync();
+  if (!response) {
+    return null;
+  }
+  return response.request.content.data as Record<string, string>;
 }

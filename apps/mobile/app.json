@@ -3,7 +3,7 @@
     "name": "PetPulse",
     "slug": "petpulse-mobile",
     "android": {
-      "package": "com.petpulse.mobile",
+      "package": "website.petpulse",
       "googleServicesFile": "./google-services.json",
       "useNextNotificationsApi": true,
       "permissions": [

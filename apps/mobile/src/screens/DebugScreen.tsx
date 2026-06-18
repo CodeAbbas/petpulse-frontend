@@ -7,16 +7,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { api } from "../lib/api";
-
-/**
- * AT3 Demonstration Simulation Controller.
- *
- * Fires an authentic behavioural-event payload at the Laravel webhook so
- * the full FCM push loop can be demonstrated on-stage without a live pet
- * in front of a camera. The payload mirrors exactly what the Python edge
- * service emits.
- */
 
 interface SimResult {
   ok: boolean;
@@ -27,7 +17,6 @@ interface SimResult {
 const EVENT_TYPES = ["pacing", "prolonged_waiting", "vocalization"] as const;
 type EventType = (typeof EVENT_TYPES)[number];
 
-// A UUID v4 generator (no external dependency needed for the demo panel).
 function uuidv4(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -37,7 +26,6 @@ function uuidv4(): string {
 }
 
 interface DebugScreenProps {
-  /** The pet whose context drives the simulated event. */
   petId: string;
   petName: string;
 }
@@ -50,9 +38,14 @@ export function DebugScreen({ petId, petName }: DebugScreenProps) {
   async function triggerMockEvent() {
     setBusy(true);
 
+    // Fallback directly to the hardcoded UUID if petId prop is missing
+    const targetId = petId === "REPLACE_WITH_LUNA_UUID_AT_DEMO_TIME" 
+      ? "9db449be-4698-43fa-9dcc-7b3f81b89ff8" 
+      : petId;
+
     const payload = {
       event_id: uuidv4(),
-      pet_id: petId,
+      pet_id: targetId,
       event_type: selected,
       severity: selected === "pacing" ? "critical" : "warning",
       confidence_score: 0.85,
@@ -60,27 +53,24 @@ export function DebugScreen({ petId, petName }: DebugScreenProps) {
     };
 
     try {
-      const response = await fetch(process.env.EXPO_PUBLIC_WEBHOOK_URL ?? "", {
+      // BULLETPROOF OVERRIDE: Hardcoded fetch using your exact laptop IP
+      const response = await fetch("http://192.168.0.32:8000/api/v1/behavioral-events", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Webhook-Secret": process.env.EXPO_PUBLIC_WEBHOOK_SECRET ?? ""
+          "X-Webhook-Secret": "AR9q6eCSYbPjhdfyjadgtfe",
         },
         body: JSON.stringify(payload),
       });
 
-      if (response.ok) {
-        setLog((prev) => [
-          { ok: true, message: `Dispatched "${selected}" for ${petName}`, at: Date.now() },
-          ...prev,
-        ]);
-      } else {
-        const errorText = await response.text();
-        setLog((prev) => [
-          { ok: false, message: `Server Error (${response.status}): ${errorText}`, at: Date.now() },
-          ...prev,
-        ]);
+      if (!response.ok) {
+        throw new Error(`HTTP Error: ${response.status}`);
       }
+
+      setLog((prev) => [
+        { ok: true, message: `Dispatched "${selected}" for ${petName}`, at: Date.now() },
+        ...prev,
+      ]);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Unknown error";
       setLog((prev) => [
