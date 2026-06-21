@@ -13,6 +13,7 @@ import {
   getInitialNotification,
   registerForPushNotifications,
 } from "../lib/notifications";
+import { registerTokenRefreshHandler, syncFcmToken } from "../lib/fcmToken";
 
 export interface BehavioralAlert {
   event_id: string;
@@ -84,11 +85,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
-  // Register the device token once the user is authenticated.
+  // Sync the FCM token once authenticated, and keep it synced on refresh.
   useEffect(() => {
-    if (isAuthenticated) {
-      void registerForPushNotifications();
+    if (!isAuthenticated) {
+      return;
     }
+
+    // Boot sync: push the current native token to the backend.
+    void syncFcmToken();
+
+    // Subscribe to token rotation so the DB never holds a stale token.
+    const unsubscribe = registerTokenRefreshHandler();
+    return unsubscribe;
   }, [isAuthenticated]);
 
   // Foreground + interaction listeners (for non-cold-start taps).
