@@ -18,7 +18,10 @@
           "color": "#0ea5e9",
           "defaultChannel": "default"
         }
-      ]
+      ],
+      "./withFirebaseManifestFix.js",
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging"
     ],
     "extra": {
       "eas": {
