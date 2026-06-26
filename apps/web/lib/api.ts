@@ -1,41 +1,9 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
-export interface PetMetrics {
-  current_weight_kg: number | null;
-  current_bmi: number | null;
-  current_bmr_kcal: number | null;
-}
+import type { Pet, HealthRecord } from '@/lib/types';
 
-export interface Pet {
-  id: string;
-  name: string;
-  species: "dog" | "cat";
-  breed: string | null;
-  sex: "male" | "female" | "unknown";
-  date_of_birth: string | null;
-  age_years: number | null;
-  microchip_number: string | null;
-  metrics: PetMetrics;
-  owner: { id: string };
-  timestamps: { created_at: string; updated_at: string };
-}
-
-export interface HealthRecord {
-  id: string;
-  record_type: string;
-  vitals: {
-    weight_kg: number | null;
-    height_cm: number | null;
-    temperature_c: number | null;
-    heart_rate_bpm: number | null;
-  };
-  computed_metrics: { bmi: number | null; bmr_kcal: number | null };
-  summary: string;
-  detail: string | null;
-  pet: { id: string; name: string | null };
-  recorded_by: { id: string | null };
-  recorded_at: string;
-}
+// Re-export so existing `import { Pet } from '@/lib/api'` call sites keep working.
+export type { Pet, HealthRecord } from '@/lib/types';
 
 interface ApiError {
   status: number;
@@ -86,4 +54,125 @@ export const petsApi = {
 export const healthRecordsApi = {
   list: (token: string | null) =>
     apiFetch<{ data: HealthRecord[] }>("/health-records", token),
+};
+
+export interface CreatePetInput {
+  name: string;
+  species: "dog" | "cat";
+  breed?: string;
+  sex?: "male" | "female" | "unknown";
+  date_of_birth?: string;
+  microchip_number?: string;
+}
+
+export interface UpdatePetInput {
+  name?: string;
+  species?: "dog" | "cat";
+  breed?: string;
+  sex?: "male" | "female" | "unknown";
+  date_of_birth?: string;
+  microchip_number?: string;
+}
+
+/**
+ * Laravel 422 validation error shape: { message, errors: { field: [msgs] } }.
+ * Thrown by the mutating helpers below so callers can surface field errors.
+ */
+export interface ValidationError {
+  status: number;
+  message: string;
+  errors: Record<string, string[]>;
+}
+
+export function isValidationError(e: unknown): e is ValidationError {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    "errors" in e &&
+    typeof (e as ValidationError).errors === "object"
+  );
+}
+
+/**
+ * Mutating fetch helper. Unlike apiFetch (which caches reads), this never
+ * caches and parses Laravel validation errors into a structured throw.
+ */
+async function apiMutate<T>(
+  path: string,
+  method: "POST" | "PATCH" | "PUT" | "DELETE",
+  token: string | null,
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+
+  if (res.status === 422) {
+    const payload = (await res.json()) as { message?: string; errors?: Record<string, string[]> };
+    const err: ValidationError = {
+      status: 422,
+      message: payload.message ?? "The given data was invalid.",
+      errors: payload.errors ?? {},
+    };
+    throw err;
+  }
+
+  if (res.status === 401) {
+    throw { status: 401, message: "Unauthenticated" } satisfies ApiError;
+  }
+
+  if (!res.ok) {
+    throw {
+      status: res.status,
+      message: `Request failed: ${res.status}`,
+    } satisfies ApiError;
+  }
+
+  // DELETE may return 200 with a null-data envelope; tolerate empty bodies.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
+}
+
+export const petsMutations = {
+  create: (input: CreatePetInput, token: string | null) =>
+    apiMutate<{ data: Pet }>("/pets", "POST", token, input),
+
+  update: (id: string, input: UpdatePetInput, token: string | null) =>
+    apiMutate<{ data: Pet }>(`/pets/${id}`, "PATCH", token, input),
+
+  remove: (id: string, token: string | null) =>
+    apiMutate<{ data: null }>(`/pets/${id}`, "DELETE", token),
+};
+// ─── Health record mutations ─────────────────────────────────────────────
+
+export interface CreateHealthRecordInput {
+  pet_id: string;
+  record_type:
+    | "weight"
+    | "vaccination"
+    | "examination"
+    | "lab_work"
+    | "dental"
+    | "surgery"
+    | "medication"
+    | "other";
+  weight_kg: number;
+  height_cm?: number;
+  temperature_c?: number;
+  heart_rate_bpm?: number;
+  summary: string;
+  notes?: string;
+  // bmi / bmr_kcal are intentionally absent — the server computes them.
+}
+
+export const healthRecordsMutations = {
+  create: (input: CreateHealthRecordInput, token: string | null) =>
+    apiMutate<{ data: HealthRecord }>("/health-records", "POST", token, input),
 };

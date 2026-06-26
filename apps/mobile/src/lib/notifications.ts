@@ -84,5 +84,5 @@ export async function getInitialNotification(): Promise<Record<string, string> |
   if (!response) {
     return null;
   }
-  return response.request.content.data as Record<string, string>;
+  return ((response as any).request?.content?.data ?? (response as any).data ?? {}) as Record<string, string>;
 }

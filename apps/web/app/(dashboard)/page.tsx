@@ -87,12 +87,14 @@ export default function DashboardPage() {
                     <td className="px-5 py-3 text-muted-foreground">
                       {recordTypeLabels[r.record_type]}
                     </td>
-                    <td className="px-5 py-3 text-right font-mono">
-                      {r.vitals.weight_kg.toFixed(1)}
+                    <td className="px-5 py-3 text-right">
+                      <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-xs text-primary">
+                        {r.computed_metrics.bmi != null ? r.computed_metrics.bmi.toFixed(1) : '—'}
+                      </span>
                     </td>
                     <td className="px-5 py-3 text-right">
                       <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-xs text-primary">
-                        {r.computed_metrics.bmi.toFixed(1)}
+                        {r.computed_metrics.bmi != null ? r.computed_metrics.bmi.toFixed(1) : '—'}
                       </span>
                     </td>
                   </tr>

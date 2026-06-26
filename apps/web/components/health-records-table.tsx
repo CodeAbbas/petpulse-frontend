@@ -1,12 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Plus, FileClock, Sparkles, CheckCircle2 } from 'lucide-react'
 import { SlideOver } from '@/components/slide-over'
 import { Field, SelectInput, TextArea, TextInput } from '@/components/form-fields'
 import {
-  computeBmi,
-  computeBmr,
   formatDate,
   recordTypeTone,
   truncateId,
@@ -14,6 +13,7 @@ import {
 import { recordTypeLabels } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 import type { HealthRecord, Pet, RecordType } from '@/lib/types'
+import { createHealthRecordAction } from '@/app/(dashboard)/health-records/actions'
 
 interface RecordForm {
   pet_id: string
@@ -57,56 +57,63 @@ export function HealthRecordsTable({
   initialRecords: HealthRecord[]
   pets: Pet[]
 }) {
-  const [records, setRecords] = useState<HealthRecord[]>(initialRecords)
+  const router = useRouter()
+  const records = initialRecords
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<RecordForm>(emptyForm(pets[0]?.id ?? ''))
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
   const [computed, setComputed] = useState<{
-    bmi: number
-    bmr_kcal: number
+    bmi: number | null
+    bmr_kcal: number | null
     name: string
   } | null>(null)
 
   function openCreate() {
     setForm(emptyForm(pets[0]?.id ?? ''))
     setComputed(null)
+    setFormError(null)
+    setFieldErrors({})
     setOpen(true)
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
-    const pet = pets.find((p) => p.id === form.pet_id)
-    if (!pet) return
+    setIsSubmitting(true)
+    setFormError(null)
+    setFieldErrors({})
 
-    const weight = parseFloat(form.weight_kg) || 0
-    const height = parseFloat(form.height_cm) || 0
-    const bmi = computeBmi(weight, height)
-    const bmr = computeBmr(weight)
-    const now = new Date().toISOString()
-
-    const record: HealthRecord = {
-      id: crypto.randomUUID(),
+    // Build the payload. BMI/BMR are NOT sent — the server computes them.
+    const payload = {
+      pet_id: form.pet_id,
       record_type: form.record_type,
-      vitals: {
-        weight_kg: weight,
-        height_cm: height || null,
-        temperature_c: form.temperature_c
-          ? parseFloat(form.temperature_c)
-          : null,
-        heart_rate_bpm: form.heart_rate_bpm
-          ? parseInt(form.heart_rate_bpm, 10)
-          : null,
-      },
-      computed_metrics: { bmi, bmr_kcal: bmr },
+      weight_kg: parseFloat(form.weight_kg),
+      ...(form.height_cm ? { height_cm: parseFloat(form.height_cm) } : {}),
+      ...(form.temperature_c ? { temperature_c: parseFloat(form.temperature_c) } : {}),
+      ...(form.heart_rate_bpm ? { heart_rate_bpm: parseInt(form.heart_rate_bpm, 10) } : {}),
       summary: form.summary,
-      detail: form.notes,
-      pet: { id: pet.id, name: pet.name },
-      recorded_by: { id: 'user-2f9c-4a1b-vet-0001' },
-      recorded_at: now,
-      timestamps: { created_at: now, updated_at: now },
+      ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
     }
 
-    setRecords((prev) => [record, ...prev])
-    setComputed({ bmi, bmr_kcal: bmr, name: pet.name })
+    const result = await createHealthRecordAction(payload)
+
+    setIsSubmitting(false)
+
+    if (result.ok && result.record) {
+      const pet = pets.find((p) => p.id === form.pet_id)
+      // Display the SERVER-computed metrics from the returned record.
+      setComputed({
+        bmi: result.record.computed_metrics.bmi,
+        bmr_kcal: result.record.computed_metrics.bmr_kcal,
+        name: pet?.name ?? 'the patient',
+      })
+      // Re-fetch the table from the server so the new row appears.
+      router.refresh()
+    } else {
+      if (result.fieldErrors) setFieldErrors(result.fieldErrors)
+      setFormError(result.message ?? 'Could not log the record.')
+    }
   }
 
   return (
@@ -172,17 +179,17 @@ export function HealthRecordsTable({
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
-                      {r.vitals.weight_kg.toFixed(1)}
+                      {r.vitals.weight_kg != null ? r.vitals.weight_kg.toFixed(1) : '—'}
                     </td>
                     <td className="bg-primary/5 px-4 py-3 text-right">
                       <span className="inline-flex items-center gap-1 font-mono text-primary">
-                        {r.computed_metrics.bmi.toFixed(2)}
+                        {r.computed_metrics.bmi != null ? r.computed_metrics.bmi.toFixed(2) : '—'}
                         <Sparkles className="size-3" aria-label="auto-computed" />
                       </span>
                     </td>
                     <td className="bg-primary/5 px-4 py-3 text-right">
                       <span className="inline-flex items-center gap-1 font-mono text-primary">
-                        {r.computed_metrics.bmr_kcal.toFixed(0)}
+                        {r.computed_metrics.bmr_kcal != null ? r.computed_metrics.bmr_kcal.toFixed(0) : '—'}
                         <Sparkles className="size-3" aria-label="auto-computed" />
                       </span>
                     </td>
@@ -196,9 +203,9 @@ export function HealthRecordsTable({
                     </td>
                     <td
                       className="px-4 py-3 font-mono text-xs text-muted-foreground"
-                      title={r.recorded_by.id}
+                      title={r.recorded_by.id ?? 'System'}
                     >
-                      {truncateId(r.recorded_by.id, 10)}
+                      {truncateId(r.recorded_by.id ?? 'System', 10)}
                     </td>
                   </tr>
                 ))}
@@ -234,9 +241,10 @@ export function HealthRecordsTable({
               <button
                 type="submit"
                 form="record-form"
-                className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                disabled={isSubmitting}
+                className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
               >
-                Save Record
+                {isSubmitting ? 'Saving...' : 'Save Record'}
               </button>
             </div>
           )
@@ -257,7 +265,7 @@ export function HealthRecordsTable({
                   BMI
                 </p>
                 <p className="mt-1 font-mono text-2xl font-semibold text-primary">
-                  {computed.bmi.toFixed(2)}
+                  {computed.bmi != null ? computed.bmi.toFixed(2) : '—'}
                 </p>
               </div>
               <div className="glass p-4 text-center">
@@ -265,7 +273,7 @@ export function HealthRecordsTable({
                   BMR
                 </p>
                 <p className="mt-1 font-mono text-2xl font-semibold text-primary">
-                  {computed.bmr_kcal.toFixed(0)}
+                  {computed.bmr_kcal != null ? computed.bmr_kcal.toFixed(0) : '—'}
                   <span className="ml-1 text-xs text-muted-foreground">
                     kcal/d
                   </span>
@@ -275,6 +283,11 @@ export function HealthRecordsTable({
           </div>
         ) : (
           <form id="record-form" onSubmit={submit} className="space-y-4">
+            {formError && (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                {formError}
+              </div>
+            )}
             <Field label="Patient" htmlFor="pet_id">
               <SelectInput
                 id="pet_id"
@@ -284,7 +297,7 @@ export function HealthRecordsTable({
               >
                 {pets.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} — {p.breed}
+                    {p.name}{p.breed ? ` — ${p.breed}` : ''}
                   </option>
                 ))}
               </SelectInput>
