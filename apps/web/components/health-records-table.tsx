@@ -108,6 +108,7 @@ export function HealthRecordsTable({
         bmr_kcal: result.record.computed_metrics.bmr_kcal,
         name: pet?.name ?? 'the patient',
       })
+      // Re-fetch the table from the server so the new row appears.
       router.refresh()
     } else {
       if (result.fieldErrors) setFieldErrors(result.fieldErrors)

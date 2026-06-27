@@ -13,13 +13,14 @@ import { useNotifications } from "../context/NotificationContext";
 import { Pet, petsApi } from "../lib/api";
 
 interface PetsScreenProps {
+  /** Switch to the add-pet form (wired by AppTabs). */
   onAddPet: () => void;
 }
 
 /**
  * The owner's home screen: their pets, and a live feed of behavioural
- * alerts received via push (from NotificationContext, populated by
- * foreground pushes and killed-state cold starts).
+ * alerts received via push. Alerts come from NotificationContext,
+ * populated by foreground pushes and killed-state cold starts.
  */
 export function PetsScreen({ onAddPet }: PetsScreenProps) {
   const { user, logout } = useAuth();

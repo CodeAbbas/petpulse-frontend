@@ -16,6 +16,11 @@ import {
  * (which a Client Component cannot) and call the Laravel API with the
  * bearer token without ever exposing it to the browser. On success they
  * revalidate the patients route so the Server Component re-fetches.
+ *
+ * Each returns a discriminated result the client form can branch on:
+ *   { ok: true }                              → success
+ *   { ok: false, fieldErrors }                → 422 validation (per-field)
+ *   { ok: false, message }                    → other failure
  */
 
 export interface ActionResult {
@@ -29,7 +34,9 @@ async function getToken(): Promise<string | null> {
   return store.get("petpulse_token")?.value ?? null;
 }
 
-export async function createPetAction(input: CreatePetInput): Promise<ActionResult> {
+export async function createPetAction(
+  input: CreatePetInput,
+): Promise<ActionResult> {
   const token = await getToken();
   try {
     await petsMutations.create(input, token);
@@ -39,7 +46,10 @@ export async function createPetAction(input: CreatePetInput): Promise<ActionResu
     if (isValidationError(e)) {
       return { ok: false, fieldErrors: e.errors, message: e.message };
     }
-    return { ok: false, message: "Could not create the patient. Check the API connection." };
+    return {
+      ok: false,
+      message: "Could not create the patient. Check the API connection.",
+    };
   }
 }
 
@@ -56,7 +66,10 @@ export async function updatePetAction(
     if (isValidationError(e)) {
       return { ok: false, fieldErrors: e.errors, message: e.message };
     }
-    return { ok: false, message: "Could not update the patient. Check the API connection." };
+    return {
+      ok: false,
+      message: "Could not update the patient. Check the API connection.",
+    };
   }
 }
 
@@ -67,6 +80,9 @@ export async function deletePetAction(id: string): Promise<ActionResult> {
     revalidatePath("/patients");
     return { ok: true };
   } catch (e) {
-    return { ok: false, message: "Could not remove the patient. Check the API connection." };
+    return {
+      ok: false,
+      message: "Could not remove the patient. Check the API connection.",
+    };
   }
 }

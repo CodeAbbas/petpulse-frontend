@@ -1,57 +1,160 @@
-import React, { useCallback, useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { useAuth } from "../context/AuthContext";
-import { AddPetScreen } from "../screens/AddPetScreen";
-import { LoginScreen } from "../screens/LoginScreen";
-import { PetsScreen } from "../screens/PetsScreen";
+import axios, {
+  AxiosError,
+  AxiosInstance,
+  InternalAxiosRequestConfig,
+} from "axios";
+import * as SecureStore from "expo-secure-store";
 
 /**
- * The owner application shell.
- *
- * Auth gate first: spinner while hydrating, LoginScreen when logged out.
- * Once authenticated, a minimal zero-dependency screen-state router
- * switches between the pets list and the add-pet form. A refreshKey is
- * bumped on successful creation so PetsScreen re-mounts and re-fetches.
+ * Android emulator maps host machine's localhost to 10.0.2.2.
+ * For iOS simulator use http://localhost:8000.
+ * For a physical device use the dev machine's LAN IP.
  */
-type AuthedScreen = "pets" | "addPet";
+export const API_BASE_URL = "http://172.17.15.142:8000/api/v1";
 
-export function AppTabs() {
-  const { isAuthenticated, isLoading } = useAuth();
-  const [screen, setScreen] = useState<AuthedScreen>("pets");
-  const [refreshKey, setRefreshKey] = useState(0);
+const TOKEN_KEY = "petpulse_auth_token";
 
-  const goToAddPet = useCallback(() => setScreen("addPet"), []);
-  const goToPets = useCallback(() => setScreen("pets"), []);
+export const tokenStore = {
+  get: () => SecureStore.getItemAsync(TOKEN_KEY),
+  set: (token: string) => SecureStore.setItemAsync(TOKEN_KEY, token),
+  clear: () => SecureStore.deleteItemAsync(TOKEN_KEY),
+};
 
-  const handleCreated = useCallback(() => {
-    setRefreshKey((k) => k + 1);
-    setScreen("pets");
-  }, []);
+/**
+ * Callback the AuthContext registers so a 401 can force a global logout
+ * without api.ts importing React state directly.
+ */
+let onUnauthorized: (() => void) | null = null;
+export const registerUnauthorizedHandler = (handler: () => void) => {
+  onUnauthorized = handler;
+};
 
-  if (isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#0ea5e9" size="large" />
-      </View>
-    );
-  }
+export const api: AxiosInstance = axios.create({
+  baseURL: API_BASE_URL,
+  headers: { Accept: "application/json", "Content-Type": "application/json" },
+  timeout: 15000,
+});
 
-  if (!isAuthenticated) {
-    return <LoginScreen />;
-  }
+// Request interceptor — inject the Sanctum bearer token.
+api.interceptors.request.use(
+  async (config: InternalAxiosRequestConfig) => {
+    const token = await tokenStore.get();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error),
+);
 
-  if (screen === "addPet") {
-    return <AddPetScreen onCreated={handleCreated} onCancel={goToPets} />;
-  }
+// Response interceptor — on 401, clear the token and trigger logout.
+api.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    if (error.response?.status === 401) {
+      await tokenStore.clear();
+      onUnauthorized?.();
+    }
+    return Promise.reject(error);
+  },
+);
 
-  return <PetsScreen key={refreshKey} onAddPet={goToAddPet} />;
+// ─── Typed API surface ───────────────────────────────────────────
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: "owner" | "vet" | "admin";
 }
 
-const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    backgroundColor: "#04060e",
-    alignItems: "center",
-    justifyContent: "center",
+interface AuthResponse {
+  data: { user: AuthUser; token: string };
+  meta: { token_type: string };
+}
+
+export const authApi = {
+  login: async (email: string, password: string, deviceName = "mobile-device") => {
+    const { data } = await api.post<AuthResponse>("/auth/login", {
+      email,
+      password,
+      device_name: deviceName,
+    });
+    return data.data;
   },
-});
+
+  register: async (
+    name: string,
+    email: string,
+    password: string,
+    passwordConfirmation: string,
+    deviceName = "mobile-device",
+  ) => {
+    const { data } = await api.post<AuthResponse>("/auth/register", {
+      name,
+      email,
+      password,
+      password_confirmation: passwordConfirmation,
+      device_name: deviceName,
+    });
+    return data.data;
+  },
+
+  logout: async () => {
+    await api.post("/auth/logout");
+  },
+
+  me: async () => {
+    const { data } = await api.get<{ data: { user: AuthUser } }>("/auth/me");
+    return data.data.user;
+  },
+};
+
+// ─── Pet API surface ─────────────────────────────────────────────
+
+export interface PetMetrics {
+  current_weight_kg: number | null;
+  current_bmi: number | null;
+  current_bmr_kcal: number | null;
+}
+
+export interface Pet {
+  id: string;
+  name: string;
+  species: "dog" | "cat";
+  breed: string | null;
+  sex: "male" | "female" | "unknown";
+  date_of_birth: string | null;
+  age_years: number | null;
+  microchip_number: string | null;
+  metrics: PetMetrics;
+  owner: { id: string };
+  timestamps: { created_at: string; updated_at: string };
+}
+
+interface PetListResponse {
+  data: Pet[];
+  meta: { total: number };
+}
+
+interface PetSingleResponse {
+  data: Pet;
+}
+
+export const petsApi = {
+  list: async (): Promise<Pet[]> => {
+    const { data } = await api.get<PetListResponse>("/pets");
+    return data.data;
+  },
+
+  create: async (input: {
+    name: string;
+    species: "dog" | "cat";
+    breed?: string;
+    sex?: "male" | "female" | "unknown";
+    date_of_birth?: string;
+  }): Promise<Pet> => {
+    const { data } = await api.post<PetSingleResponse>("/pets", input);
+    return data.data;
+  },
+};

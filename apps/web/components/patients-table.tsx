@@ -43,9 +43,6 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
   const [, startTransition] = useTransition()
 
-  // Pets come from the server (initialPets). After a mutation we call
-  // router.refresh(), which re-runs the Server Component fetch and feeds
-  // fresh initialPets back in — so we render directly from the prop.
   const pets = initialPets
 
   const editing = useMemo(
@@ -346,7 +343,11 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
             />
           </Field>
 
-          <Field label="Date of Birth" htmlFor="dob" hint={fieldError('date_of_birth')}>
+          <Field
+            label="Date of Birth"
+            htmlFor="dob"
+            hint={fieldError('date_of_birth')}
+          >
             <TextInput
               id="dob"
               type="date"

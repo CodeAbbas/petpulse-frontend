@@ -109,9 +109,8 @@ export const authApi = {
     return data.data.user;
   },
 };
-// ─── apps/mobile/src/lib/api.ts ─────────────
 
-// ─── APPEND TO apps/mobile/src/lib/api.ts (after the authApi export) ─────
+// ─── Pet API surface ─────────────────────────────────────────────
 
 export interface PetMetrics {
   current_weight_kg: number | null;

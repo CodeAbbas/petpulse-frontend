@@ -3,7 +3,7 @@ import type { Pet, HealthRecord } from "@/lib/types";
 // Re-export so existing `import { Pet } from '@/lib/api'` call sites keep working.
 export type { Pet, HealthRecord, PetMetrics } from "@/lib/types";
 
-const API_BASE_URL = "http://127.0.0.1:8000/api/v1";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
 export interface ApiError {
   status: number;
@@ -49,7 +49,7 @@ async function apiFetch<T>(
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init.headers,
       },
-      cache: "no-store", // Disable cache during debugging
+      cache: "no-store",
     });
   } catch (e) {
     // Handle true network errors (e.g., DNS, ECONNREFUSED)
@@ -57,7 +57,6 @@ async function apiFetch<T>(
     throw { status: 503, message: `Network/fetch error: ${message}` } satisfies ApiError;
   }
 
-  // Handle API-level errors (e.g., 4xx, 5xx)
   if (res.status === 401) {
     throw { status: 401, message: "Unauthenticated" } satisfies ApiError;
   }
@@ -155,6 +154,8 @@ export const petsMutations = {
   remove: (id: string, token: string | null) =>
     apiMutate<{ data: null }>(`/pets/${id}`, "DELETE", token),
 };
+
+// ─── Health record mutations ─────────────────────────────────────────────
 
 export interface CreateHealthRecordInput {
   pet_id: string;
