@@ -10,7 +10,7 @@ import * as SecureStore from "expo-secure-store";
  * For iOS simulator use http://localhost:8000.
  * For a physical device use the dev machine's LAN IP.
  */
-export const API_BASE_URL = "http://192.168.0.32:8000/api/v1";
+export const API_BASE_URL = "http://172.17.15.142:8000/api/v1";
 
 const TOKEN_KEY = "petpulse_auth_token";
 
@@ -107,5 +107,53 @@ export const authApi = {
   me: async () => {
     const { data } = await api.get<{ data: { user: AuthUser } }>("/auth/me");
     return data.data.user;
+  },
+};
+// ─── apps/mobile/src/lib/api.ts ─────────────
+
+export interface PetMetrics {
+  current_weight_kg: number | null;
+  current_bmi: number | null;
+  current_bmr_kcal: number | null;
+}
+
+export interface Pet {
+  id: string;
+  name: string;
+  species: "dog" | "cat";
+  breed: string | null;
+  sex: "male" | "female" | "unknown";
+  date_of_birth: string | null;
+  age_years: number | null;
+  microchip_number: string | null;
+  metrics: PetMetrics;
+  owner: { id: string };
+  timestamps: { created_at: string; updated_at: string };
+}
+
+interface PetListResponse {
+  data: Pet[];
+  meta: { total: number };
+}
+
+interface PetSingleResponse {
+  data: Pet;
+}
+
+export const petsApi = {
+  list: async (): Promise<Pet[]> => {
+    const { data } = await api.get<PetListResponse>("/pets");
+    return data.data;
+  },
+
+  create: async (input: {
+    name: string;
+    species: "dog" | "cat";
+    breed?: string;
+    sex?: "male" | "female" | "unknown";
+    date_of_birth?: string;
+  }): Promise<Pet> => {
+    const { data } = await api.post<PetSingleResponse>("/pets", input);
+    return data.data;
   },
 };

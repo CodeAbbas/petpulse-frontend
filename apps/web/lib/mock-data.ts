@@ -12,10 +12,10 @@ export const currentUser: CurrentUser = {
   role: 'vet',
 }
 
-const OWNER_SARAH = { id: 'owner-7c1a-4f22-9e0b-001', name: 'Sarah Mitchell' }
-const OWNER_JAMES = { id: 'owner-9d4e-4b81-a2c5-002', name: 'James Okafor' }
-const OWNER_PRIYA = { id: 'owner-1b6f-4c93-8d10-003', name: 'Priya Nair' }
-const OWNER_DIEGO = { id: 'owner-3e8a-4d52-b7f4-004', name: 'Diego Ramos' }
+const OWNER_SARAH = { id: 'owner-7c1a-4f22-9e0b-001' }
+const OWNER_JAMES = { id: 'owner-9d4e-4b81-a2c5-002' }
+const OWNER_PRIYA = { id: 'owner-1b6f-4c93-8d10-003' }
+const OWNER_DIEGO = { id: 'owner-3e8a-4d52-b7f4-004' }
 
 export const pets: Pet[] = [
   {
@@ -156,10 +156,6 @@ export const healthRecords: HealthRecord[] = [
     pet: { id: 'a7f3e1d2-0000-4000-8000-000000000000', name: 'Luna' },
     recorded_by: { id: 'user-2f9c-4a1b-vet-0001' },
     recorded_at: '2026-06-08T00:00:00+00:00',
-    timestamps: {
-      created_at: '2026-06-08T10:00:00+00:00',
-      updated_at: '2026-06-08T10:00:00+00:00',
-    },
   },
   {
     id: 'record-7b3e-4d51-002',
@@ -176,10 +172,6 @@ export const healthRecords: HealthRecord[] = [
     pet: { id: 'b8e4f2c3-1111-4000-8000-000000000001', name: 'Milo' },
     recorded_by: { id: 'user-2f9c-4a1b-vet-0001' },
     recorded_at: '2026-06-07T00:00:00+00:00',
-    timestamps: {
-      created_at: '2026-06-07T14:30:00+00:00',
-      updated_at: '2026-06-07T14:30:00+00:00',
-    },
   },
   {
     id: 'record-5c6a-4e82-003',
@@ -196,10 +188,6 @@ export const healthRecords: HealthRecord[] = [
     pet: { id: 'c9f5a3d4-2222-4000-8000-000000000002', name: 'Bella' },
     recorded_by: { id: 'user-2f9c-4a1b-vet-0001' },
     recorded_at: '2026-06-06T00:00:00+00:00',
-    timestamps: {
-      created_at: '2026-06-06T09:15:00+00:00',
-      updated_at: '2026-06-06T09:15:00+00:00',
-    },
   },
   {
     id: 'record-3d8b-4f13-004',
@@ -216,10 +204,6 @@ export const healthRecords: HealthRecord[] = [
     pet: { id: 'd0a6b4e5-3333-4000-8000-000000000003', name: 'Oscar' },
     recorded_by: { id: 'user-2f9c-4a1b-vet-0001' },
     recorded_at: '2026-06-05T00:00:00+00:00',
-    timestamps: {
-      created_at: '2026-06-05T11:45:00+00:00',
-      updated_at: '2026-06-05T11:45:00+00:00',
-    },
   },
   {
     id: 'record-1e9c-4a44-005',
@@ -236,10 +220,6 @@ export const healthRecords: HealthRecord[] = [
     pet: { id: 'e1b7c5f6-4444-4000-8000-000000000004', name: 'Rocky' },
     recorded_by: { id: 'user-2f9c-4a1b-vet-0001' },
     recorded_at: '2026-06-04T00:00:00+00:00',
-    timestamps: {
-      created_at: '2026-06-04T16:20:00+00:00',
-      updated_at: '2026-06-04T16:20:00+00:00',
-    },
   },
   {
     id: 'record-0f0d-4b75-006',
@@ -256,10 +236,6 @@ export const healthRecords: HealthRecord[] = [
     pet: { id: 'f2c8d6a7-5555-4000-8000-000000000005', name: 'Cleo' },
     recorded_by: { id: 'user-2f9c-4a1b-vet-0001' },
     recorded_at: '2026-06-03T00:00:00+00:00',
-    timestamps: {
-      created_at: '2026-06-03T08:50:00+00:00',
-      updated_at: '2026-06-03T08:50:00+00:00',
-    },
   },
 ]
 
@@ -321,9 +297,10 @@ export const dashboardStats = {
   totalPatients: pets.length,
   recordsThisWeek: healthRecords.length,
   activeAlerts: alerts.filter((a) => a.severity !== 'info').length,
-  avgBmi:
-    Math.round(
-      (pets.reduce((sum, p) => sum + p.metrics.current_bmi, 0) / pets.length) *
-        10,
-    ) / 10,
+  avgBmi: (() => {
+    const withBmi = pets.filter((p) => p.metrics.current_bmi != null)
+    if (withBmi.length === 0) return 0
+    const sum = withBmi.reduce((acc, p) => acc + (p.metrics.current_bmi ?? 0), 0)
+    return Math.round((sum / withBmi.length) * 10) / 10
+  })(),
 }

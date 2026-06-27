@@ -1,12 +1,18 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { Plus, Eye, Pencil, Trash2, PawPrint, AlertTriangle, Loader2 } from 'lucide-react'
 import { SlideOver } from '@/components/slide-over'
 import { Field, SelectInput, TextInput } from '@/components/form-fields'
 import { formatDate, truncateId } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { Pet, Sex, Species } from '@/lib/types'
+import {
+  createPetAction,
+  updatePetAction,
+  deletePetAction,
+} from '@/app/(dashboard)/patients/actions'
 
 interface PetForm {
   name: string
@@ -26,19 +32,21 @@ const emptyForm: PetForm = {
   microchip_number: '',
 }
 
-function ageFromDob(dob: string): number {
-  if (!dob) return 0
-  const diff = Date.now() - new Date(dob).getTime()
-  return Math.max(0, Math.floor(diff / (365.25 * 24 * 3600 * 1000)))
-}
-
 export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
-  const [pets, setPets] = useState<Pet[]>(initialPets)
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deletingPet, setDeletingPet] = useState<Pet | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [form, setForm] = useState<PetForm>(emptyForm)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
+  const [, startTransition] = useTransition()
+
+  // Pets come from the server (initialPets). After a mutation we call
+  // router.refresh(), which re-runs the Server Component fetch and feeds
+  // fresh initialPets back in — so we render directly from the prop.
+  const pets = initialPets
 
   const editing = useMemo(
     () => pets.find((p) => p.id === editingId) ?? null,
@@ -48,6 +56,8 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
   function openCreate() {
     setEditingId(null)
     setForm(emptyForm)
+    setFormError(null)
+    setFieldErrors({})
     setOpen(true)
   }
 
@@ -56,17 +66,24 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
     setForm({
       name: pet.name,
       species: pet.species,
-      breed: pet.breed,
+      breed: pet.breed ?? '',
       sex: pet.sex,
-      date_of_birth: pet.date_of_birth,
-      microchip_number: pet.microchip_number,
+      date_of_birth: pet.date_of_birth ?? '',
+      microchip_number: pet.microchip_number ?? '',
     })
+    setFormError(null)
+    setFieldErrors({})
     setOpen(true)
   }
 
-  function confirmRemove() {
-    if (deletingPet) {
-      setPets((prev) => prev.filter((p) => p.id !== deletingPet.id))
+  async function confirmRemove() {
+    if (!deletingPet) return
+    const result = await deletePetAction(deletingPet.id)
+    if (result.ok) {
+      setDeletingPet(null)
+      startTransition(() => router.refresh())
+    } else {
+      setFormError(result.message ?? 'Could not remove the patient.')
       setDeletingPet(null)
     }
   }
@@ -74,46 +91,39 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setIsSubmitting(true)
+    setFormError(null)
+    setFieldErrors({})
 
-    // Simulate network latency for UI testing (remove when Laravel backend is connected)
-    await new Promise((resolve) => setTimeout(resolve, 800))
-
-    const age = ageFromDob(form.date_of_birth)
-    if (editing) {
-      setPets((prev) =>
-        prev.map((p) =>
-          p.id === editing.id
-            ? {
-                ...p,
-                ...form,
-                age_years: age,
-                timestamps: {
-                  ...p.timestamps,
-                  updated_at: new Date().toISOString(),
-                },
-              }
-            : p,
-        ),
-      )
-    } else {
-      const now = new Date().toISOString()
-      const newPet: Pet = {
-        id: crypto.randomUUID(),
-        ...form,
-        age_years: age,
-        metrics: {
-          current_weight_kg: 0,
-          current_bmi: 0,
-          current_bmr_kcal: 0,
-        },
-        owner: { id: crypto.randomUUID(), name: 'Unassigned' },
-        timestamps: { created_at: now, updated_at: now },
-      }
-      setPets((prev) => [newPet, ...prev])
+    // Build a payload matching Laravel's StorePetRequest. Empty optional
+    // fields are omitted so 'nullable' rules aren't tripped by empty strings.
+    const payload = {
+      name: form.name.trim(),
+      species: form.species,
+      ...(form.breed.trim() ? { breed: form.breed.trim() } : {}),
+      sex: form.sex,
+      ...(form.date_of_birth ? { date_of_birth: form.date_of_birth } : {}),
+      ...(form.microchip_number.trim()
+        ? { microchip_number: form.microchip_number.trim() }
+        : {}),
     }
-    
+
+    const result = editing
+      ? await updatePetAction(editing.id, payload)
+      : await createPetAction(payload)
+
     setIsSubmitting(false)
-    setOpen(false)
+
+    if (result.ok) {
+      setOpen(false)
+      startTransition(() => router.refresh())
+    } else {
+      if (result.fieldErrors) setFieldErrors(result.fieldErrors)
+      setFormError(result.message ?? 'Submission failed.')
+    }
+  }
+
+  function fieldError(name: string): string | undefined {
+    return fieldErrors[name]?.[0]
   }
 
   return (
@@ -166,13 +176,13 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
                       </span>
                     </td>
                     <td className="px-5 py-3 text-muted-foreground">
-                      {pet.breed}
+                      {pet.breed ?? '—'}
                     </td>
                     <td className="px-5 py-3 capitalize text-muted-foreground">
                       {pet.sex}
                     </td>
                     <td className="px-5 py-3 text-right font-mono">
-                      {pet.age_years}y
+                      {pet.age_years ?? '—'}y
                     </td>
                     <td
                       className="px-5 py-3 font-mono text-xs text-muted-foreground"
@@ -222,11 +232,13 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
               </div>
               <h3 className="text-lg font-semibold text-foreground">Remove Patient</h3>
             </div>
-            
+
             <p className="mb-6 text-sm text-muted-foreground">
-              Are you sure you want to remove <strong className="font-medium text-foreground">{deletingPet.name}</strong>? This action cannot be undone.
+              Are you sure you want to remove{' '}
+              <strong className="font-medium text-foreground">{deletingPet.name}</strong>?
+              This action cannot be undone.
             </p>
-            
+
             <div className="flex justify-end gap-3">
               <button
                 type="button"
@@ -279,7 +291,13 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
         }
       >
         <form id="patient-form" onSubmit={submit} className="space-y-4">
-          <Field label="Name" htmlFor="name">
+          {formError && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              {formError}
+            </div>
+          )}
+
+          <Field label="Name" htmlFor="name" hint={fieldError('name')}>
             <TextInput
               id="name"
               required
@@ -291,7 +309,7 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
           </Field>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Species" htmlFor="species">
+            <Field label="Species" htmlFor="species" hint={fieldError('species')}>
               <SelectInput
                 id="species"
                 disabled={isSubmitting}
@@ -304,14 +322,12 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
                 <option value="cat">Cat</option>
               </SelectInput>
             </Field>
-            <Field label="Sex" htmlFor="sex">
+            <Field label="Sex" htmlFor="sex" hint={fieldError('sex')}>
               <SelectInput
                 id="sex"
                 disabled={isSubmitting}
                 value={form.sex}
-                onChange={(e) =>
-                  setForm({ ...form, sex: e.target.value as Sex })
-                }
+                onChange={(e) => setForm({ ...form, sex: e.target.value as Sex })}
               >
                 <option value="male">Male</option>
                 <option value="female">Female</option>
@@ -320,10 +336,9 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
             </Field>
           </div>
 
-          <Field label="Breed" htmlFor="breed">
+          <Field label="Breed" htmlFor="breed" hint={fieldError('breed')}>
             <TextInput
               id="breed"
-              required
               disabled={isSubmitting}
               value={form.breed}
               onChange={(e) => setForm({ ...form, breed: e.target.value })}
@@ -331,11 +346,14 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
             />
           </Field>
 
-          <Field label="Date of Birth" htmlFor="dob">
+          <Field
+            label="Date of Birth"
+            htmlFor="dob"
+            hint={fieldError('date_of_birth')}
+          >
             <TextInput
               id="dob"
               type="date"
-              required
               disabled={isSubmitting}
               value={form.date_of_birth}
               onChange={(e) =>
@@ -347,7 +365,7 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
           <Field
             label="Microchip Number"
             htmlFor="microchip"
-            hint="15-digit ISO microchip identifier."
+            hint={fieldError('microchip_number') ?? '15-digit ISO microchip identifier.'}
           >
             <TextInput
               id="microchip"

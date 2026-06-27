@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { healthRecordsApi, type HealthRecord } from "@/lib/api";
+import { healthRecordsApi, petsApi, type HealthRecord, type Pet } from "@/lib/api";
 import { HealthRecordsTable } from "@/components/health-records-table";
 
 export default async function HealthRecordsPage() {
@@ -7,11 +7,17 @@ export default async function HealthRecordsPage() {
   const token = cookieStore.get("petpulse_token")?.value ?? null;
 
   let records: HealthRecord[] = [];
+  let pets: Pet[] = [];
   let error: string | null = null;
 
   try {
-    const response = await healthRecordsApi.list(token);
-    records = response.data;
+    // Fetch records and pets in parallel; the log form needs the pet list.
+    const [recordResponse, petResponse] = await Promise.all([
+      healthRecordsApi.list(token),
+      petsApi.list(token),
+    ]);
+    records = recordResponse.data;
+    pets = petResponse.data;
   } catch (e) {
     error = "Unable to connect to the PetPulse vitals log engine.";
   }
@@ -28,8 +34,7 @@ export default async function HealthRecordsPage() {
           {error}
         </div>
       ) : (
-        // Pass real records directly down to your v0 table view
-        <HealthRecordsTable initialRecords={records} />
+        <HealthRecordsTable initialRecords={records} pets={pets} />
       )}
     </div>
   );
