@@ -191,7 +191,7 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
                       {truncateId(pet.owner.id, 10)}
                     </td>
                     <td className="px-5 py-3 text-right font-mono">
-                      {pet.metrics.current_weight_kg
+                      {pet.metrics.current_weight_kg != null
                         ? `${pet.metrics.current_weight_kg.toFixed(1)}`
                         : '—'}
                     </td>
@@ -346,11 +346,7 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
             />
           </Field>
 
-          <Field
-            label="Date of Birth"
-            htmlFor="dob"
-            hint={fieldError('date_of_birth')}
-          >
+          <Field label="Date of Birth" htmlFor="dob" hint={fieldError('date_of_birth')}>
             <TextInput
               id="dob"
               type="date"

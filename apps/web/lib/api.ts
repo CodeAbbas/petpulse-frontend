@@ -1,82 +1,18 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
-
-import type { Pet, HealthRecord } from '@/lib/types';
+import type { Pet, HealthRecord } from "@/lib/types";
 
 // Re-export so existing `import { Pet } from '@/lib/api'` call sites keep working.
-export type { Pet, HealthRecord } from '@/lib/types';
+export type { Pet, HealthRecord, PetMetrics } from "@/lib/types";
 
-interface ApiError {
+const API_BASE_URL = "http://127.0.0.1:8000/api/v1";
+
+export interface ApiError {
   status: number;
   message: string;
 }
 
 /**
- * Server-side fetch helper. Token is passed explicitly (resolved from the
- * session/cookie in the calling Server Component), since Server Components
- * cannot read client storage.
- */
-async function apiFetch<T>(
-  path: string,
-  token: string | null,
-  init: RequestInit = {},
-): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-    // Revalidate every 30s; override per-call as needed.
-    next: { revalidate: 30 },
-  });
-
-  if (res.status === 401) {
-    const err: ApiError = { status: 401, message: "Unauthenticated" };
-    throw err;
-  }
-  if (!res.ok) {
-    const err: ApiError = { status: res.status, message: `Request failed: ${res.status}` };
-    throw err;
-  }
-
-  return res.json() as Promise<T>;
-}
-
-export const petsApi = {
-  list: (token: string | null) =>
-    apiFetch<{ data: Pet[]; meta: { total: number } }>("/pets", token),
-  get: (id: string, token: string | null) =>
-    apiFetch<{ data: Pet }>(`/pets/${id}`, token),
-};
-
-export const healthRecordsApi = {
-  list: (token: string | null) =>
-    apiFetch<{ data: HealthRecord[] }>("/health-records", token),
-};
-
-export interface CreatePetInput {
-  name: string;
-  species: "dog" | "cat";
-  breed?: string;
-  sex?: "male" | "female" | "unknown";
-  date_of_birth?: string;
-  microchip_number?: string;
-}
-
-export interface UpdatePetInput {
-  name?: string;
-  species?: "dog" | "cat";
-  breed?: string;
-  sex?: "male" | "female" | "unknown";
-  date_of_birth?: string;
-  microchip_number?: string;
-}
-
-/**
  * Laravel 422 validation error shape: { message, errors: { field: [msgs] } }.
- * Thrown by the mutating helpers below so callers can surface field errors.
+ * Thrown by the mutating helpers so callers can surface field-level errors.
  */
 export interface ValidationError {
   status: number;
@@ -94,8 +30,49 @@ export function isValidationError(e: unknown): e is ValidationError {
 }
 
 /**
- * Mutating fetch helper. Unlike apiFetch (which caches reads), this never
- * caches and parses Laravel validation errors into a structured throw.
+ * Server-side read helper. Token is passed explicitly (resolved from the
+ * session cookie in the calling Server Component), since Server Components
+ * cannot read client storage.
+ */
+async function apiFetch<T>(
+  path: string,
+  token: string | null,
+  init: RequestInit = {},
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init.headers,
+      },
+      cache: "no-store", // Disable cache during debugging
+    });
+  } catch (e) {
+    // Handle true network errors (e.g., DNS, ECONNREFUSED)
+    const message = e instanceof Error ? e.message : JSON.stringify(e);
+    throw { status: 503, message: `Network/fetch error: ${message}` } satisfies ApiError;
+  }
+
+  // Handle API-level errors (e.g., 4xx, 5xx)
+  if (res.status === 401) {
+    throw { status: 401, message: "Unauthenticated" } satisfies ApiError;
+  }
+  if (!res.ok) {
+    const errorBody = await res.text().catch(() => "Could not read error body.");
+    const message = `Request failed with status ${res.status}. Body: ${errorBody.substring(0, 300)}`;
+    throw { status: res.status, message } satisfies ApiError;
+  }
+
+  return res.json() as Promise<T>;
+}
+
+/**
+ * Mutating fetch helper. Never caches, and parses Laravel validation
+ * errors into a structured throw.
  */
 async function apiMutate<T>(
   path: string,
@@ -116,12 +93,11 @@ async function apiMutate<T>(
 
   if (res.status === 422) {
     const payload = (await res.json()) as { message?: string; errors?: Record<string, string[]> };
-    const err: ValidationError = {
+    throw {
       status: 422,
       message: payload.message ?? "The given data was invalid.",
       errors: payload.errors ?? {},
-    };
-    throw err;
+    } satisfies ValidationError;
   }
 
   if (res.status === 401) {
@@ -129,10 +105,7 @@ async function apiMutate<T>(
   }
 
   if (!res.ok) {
-    throw {
-      status: res.status,
-      message: `Request failed: ${res.status}`,
-    } satisfies ApiError;
+    throw { status: res.status, message: `Request failed: ${res.status}` } satisfies ApiError;
   }
 
   // DELETE may return 200 with a null-data envelope; tolerate empty bodies.
@@ -140,17 +113,48 @@ async function apiMutate<T>(
   return (text ? JSON.parse(text) : null) as T;
 }
 
+// ─── Read path ───────────────────────────────────────────────────────────
+
+export const petsApi = {
+  list: (token: string | null) =>
+    apiFetch<{ data: Pet[]; meta: { total: number } }>("/pets", token),
+  get: (id: string, token: string | null) =>
+    apiFetch<{ data: Pet }>(`/pets/${id}`, token),
+};
+
+export const healthRecordsApi = {
+  list: (token: string | null) =>
+    apiFetch<{ data: HealthRecord[] }>("/health-records", token),
+};
+
+// ─── Write path (mutations) ──────────────────────────────────────────────
+
+export interface CreatePetInput {
+  name: string;
+  species: "dog" | "cat";
+  breed?: string;
+  sex?: "male" | "female" | "unknown";
+  date_of_birth?: string;
+  microchip_number?: string;
+}
+
+export interface UpdatePetInput {
+  name?: string;
+  species?: "dog" | "cat";
+  breed?: string;
+  sex?: "male" | "female" | "unknown";
+  date_of_birth?: string;
+  microchip_number?: string;
+}
+
 export const petsMutations = {
   create: (input: CreatePetInput, token: string | null) =>
     apiMutate<{ data: Pet }>("/pets", "POST", token, input),
-
   update: (id: string, input: UpdatePetInput, token: string | null) =>
     apiMutate<{ data: Pet }>(`/pets/${id}`, "PATCH", token, input),
-
   remove: (id: string, token: string | null) =>
     apiMutate<{ data: null }>(`/pets/${id}`, "DELETE", token),
 };
-// ─── Health record mutations ─────────────────────────────────────────────
 
 export interface CreateHealthRecordInput {
   pet_id: string;

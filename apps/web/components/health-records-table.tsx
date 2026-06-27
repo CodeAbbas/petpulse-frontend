@@ -2,14 +2,10 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, FileClock, Sparkles, CheckCircle2 } from 'lucide-react'
+import { Plus, FileClock, Sparkles, CheckCircle2, Loader2 } from 'lucide-react'
 import { SlideOver } from '@/components/slide-over'
 import { Field, SelectInput, TextArea, TextInput } from '@/components/form-fields'
-import {
-  formatDate,
-  recordTypeTone,
-  truncateId,
-} from '@/lib/format'
+import { formatDate, recordTypeTone, truncateId } from '@/lib/format'
 import { recordTypeLabels } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 import type { HealthRecord, Pet, RecordType } from '@/lib/types'
@@ -84,20 +80,24 @@ export function HealthRecordsTable({
     setFormError(null)
     setFieldErrors({})
 
-    // Build the payload. BMI/BMR are NOT sent — the server computes them.
+    // BMI/BMR are NOT sent — the server computes them (FR-03). Empty
+    // optional fields are omitted so 'nullable' rules aren't tripped.
     const payload = {
       pet_id: form.pet_id,
       record_type: form.record_type,
       weight_kg: parseFloat(form.weight_kg),
       ...(form.height_cm ? { height_cm: parseFloat(form.height_cm) } : {}),
-      ...(form.temperature_c ? { temperature_c: parseFloat(form.temperature_c) } : {}),
-      ...(form.heart_rate_bpm ? { heart_rate_bpm: parseInt(form.heart_rate_bpm, 10) } : {}),
+      ...(form.temperature_c
+        ? { temperature_c: parseFloat(form.temperature_c) }
+        : {}),
+      ...(form.heart_rate_bpm
+        ? { heart_rate_bpm: parseInt(form.heart_rate_bpm, 10) }
+        : {}),
       summary: form.summary,
       ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
     }
 
     const result = await createHealthRecordAction(payload)
-
     setIsSubmitting(false)
 
     if (result.ok && result.record) {
@@ -108,12 +108,15 @@ export function HealthRecordsTable({
         bmr_kcal: result.record.computed_metrics.bmr_kcal,
         name: pet?.name ?? 'the patient',
       })
-      // Re-fetch the table from the server so the new row appears.
       router.refresh()
     } else {
       if (result.fieldErrors) setFieldErrors(result.fieldErrors)
       setFormError(result.message ?? 'Could not log the record.')
     }
+  }
+
+  function fieldError(name: string): string | undefined {
+    return fieldErrors[name]?.[0]
   }
 
   return (
@@ -217,9 +220,9 @@ export function HealthRecordsTable({
 
       <SlideOver
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => !isSubmitting && setOpen(false)}
         title="Log Health Record"
-        description="BMI and BMR are derived automatically from vitals."
+        description="BMI and BMR are derived automatically by the server from vitals."
         footer={
           computed ? (
             <button
@@ -234,7 +237,8 @@ export function HealthRecordsTable({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/5"
+                disabled={isSubmitting}
+                className="rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/5 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -242,8 +246,9 @@ export function HealthRecordsTable({
                 type="submit"
                 form="record-form"
                 disabled={isSubmitting}
-                className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-70 min-w-[120px]"
               >
+                {isSubmitting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
                 {isSubmitting ? 'Saving...' : 'Save Record'}
               </button>
             </div>
@@ -288,10 +293,12 @@ export function HealthRecordsTable({
                 {formError}
               </div>
             )}
-            <Field label="Patient" htmlFor="pet_id">
+
+            <Field label="Patient" htmlFor="pet_id" hint={fieldError('pet_id')}>
               <SelectInput
                 id="pet_id"
                 required
+                disabled={isSubmitting}
                 value={form.pet_id}
                 onChange={(e) => setForm({ ...form, pet_id: e.target.value })}
               >
@@ -303,9 +310,10 @@ export function HealthRecordsTable({
               </SelectInput>
             </Field>
 
-            <Field label="Record Type" htmlFor="record_type">
+            <Field label="Record Type" htmlFor="record_type" hint={fieldError('record_type')}>
               <SelectInput
                 id="record_type"
+                disabled={isSubmitting}
                 value={form.record_type}
                 onChange={(e) =>
                   setForm({ ...form, record_type: e.target.value as RecordType })
@@ -320,12 +328,13 @@ export function HealthRecordsTable({
             </Field>
 
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Weight (kg)" htmlFor="weight_kg">
+              <Field label="Weight (kg)" htmlFor="weight_kg" hint={fieldError('weight_kg')}>
                 <TextInput
                   id="weight_kg"
                   type="number"
                   step="0.1"
                   required
+                  disabled={isSubmitting}
                   value={form.weight_kg}
                   onChange={(e) =>
                     setForm({ ...form, weight_kg: e.target.value })
@@ -333,11 +342,12 @@ export function HealthRecordsTable({
                   placeholder="30.0"
                 />
               </Field>
-              <Field label="Height (cm)" htmlFor="height_cm" hint="Optional">
+              <Field label="Height (cm)" htmlFor="height_cm" hint={fieldError('height_cm') ?? 'Optional'}>
                 <TextInput
                   id="height_cm"
                   type="number"
                   step="0.1"
+                  disabled={isSubmitting}
                   value={form.height_cm}
                   onChange={(e) =>
                     setForm({ ...form, height_cm: e.target.value })
@@ -351,12 +361,13 @@ export function HealthRecordsTable({
               <Field
                 label="Temperature (°C)"
                 htmlFor="temperature_c"
-                hint="Optional"
+                hint={fieldError('temperature_c') ?? 'Optional'}
               >
                 <TextInput
                   id="temperature_c"
                   type="number"
                   step="0.1"
+                  disabled={isSubmitting}
                   value={form.temperature_c}
                   onChange={(e) =>
                     setForm({ ...form, temperature_c: e.target.value })
@@ -367,11 +378,12 @@ export function HealthRecordsTable({
               <Field
                 label="Heart Rate (bpm)"
                 htmlFor="heart_rate_bpm"
-                hint="Optional"
+                hint={fieldError('heart_rate_bpm') ?? 'Optional'}
               >
                 <TextInput
                   id="heart_rate_bpm"
                   type="number"
+                  disabled={isSubmitting}
                   value={form.heart_rate_bpm}
                   onChange={(e) =>
                     setForm({ ...form, heart_rate_bpm: e.target.value })
@@ -388,19 +400,21 @@ export function HealthRecordsTable({
               </p>
             </div>
 
-            <Field label="Summary" htmlFor="summary">
+            <Field label="Summary" htmlFor="summary" hint={fieldError('summary')}>
               <TextInput
                 id="summary"
                 required
+                disabled={isSubmitting}
                 value={form.summary}
                 onChange={(e) => setForm({ ...form, summary: e.target.value })}
                 placeholder="Routine weigh-in"
               />
             </Field>
 
-            <Field label="Notes" htmlFor="notes">
+            <Field label="Notes" htmlFor="notes" hint={fieldError('notes')}>
               <TextArea
                 id="notes"
+                disabled={isSubmitting}
                 value={form.notes}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
                 placeholder="Additional clinical detail…"

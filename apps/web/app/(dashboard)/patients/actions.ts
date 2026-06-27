@@ -15,13 +15,7 @@ import {
  * These run on the server, so they can read the httpOnly session cookie
  * (which a Client Component cannot) and call the Laravel API with the
  * bearer token without ever exposing it to the browser. On success they
- * revalidate the patients route so the Server Component re-fetches and
- * the new/updated row appears.
- *
- * Each returns a discriminated result the client form can branch on:
- *   { ok: true }                              → success
- *   { ok: false, fieldErrors }                → 422 validation (per-field)
- *   { ok: false, message }                    → other failure
+ * revalidate the patients route so the Server Component re-fetches.
  */
 
 export interface ActionResult {
@@ -30,15 +24,13 @@ export interface ActionResult {
   fieldErrors?: Record<string, string[]>;
 }
 
-function getToken(store: Awaited<ReturnType<typeof cookies>>): string | null {
+async function getToken(): Promise<string | null> {
+  const store = await cookies();
   return store.get("petpulse_token")?.value ?? null;
 }
 
-export async function createPetAction(
-  input: CreatePetInput,
-): Promise<ActionResult> {
-  const token = getToken(await cookies());
-
+export async function createPetAction(input: CreatePetInput): Promise<ActionResult> {
+  const token = await getToken();
   try {
     await petsMutations.create(input, token);
     revalidatePath("/patients");
@@ -47,10 +39,7 @@ export async function createPetAction(
     if (isValidationError(e)) {
       return { ok: false, fieldErrors: e.errors, message: e.message };
     }
-    return {
-      ok: false,
-      message: "Could not create the patient. Check the API connection.",
-    };
+    return { ok: false, message: "Could not create the patient. Check the API connection." };
   }
 }
 
@@ -58,8 +47,7 @@ export async function updatePetAction(
   id: string,
   input: UpdatePetInput,
 ): Promise<ActionResult> {
-  const token = getToken(await cookies());
-
+  const token = await getToken();
   try {
     await petsMutations.update(id, input, token);
     revalidatePath("/patients");
@@ -68,24 +56,17 @@ export async function updatePetAction(
     if (isValidationError(e)) {
       return { ok: false, fieldErrors: e.errors, message: e.message };
     }
-    return {
-      ok: false,
-      message: "Could not update the patient. Check the API connection.",
-    };
+    return { ok: false, message: "Could not update the patient. Check the API connection." };
   }
 }
 
 export async function deletePetAction(id: string): Promise<ActionResult> {
-  const token = getToken(await cookies());
-
+  const token = await getToken();
   try {
     await petsMutations.remove(id, token);
     revalidatePath("/patients");
     return { ok: true };
   } catch (e) {
-    return {
-      ok: false,
-      message: "Could not remove the patient. Check the API connection.",
-    };
+    return { ok: false, message: "Could not remove the patient. Check the API connection." };
   }
 }

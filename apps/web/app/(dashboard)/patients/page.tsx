@@ -13,8 +13,8 @@ export default async function PatientsPage() {
   try {
     const response = await petsApi.list(token);
     pets = response.data;
-  } catch (e) {
-    error = "Unable to connect to the PetPulse API engine.";
+  } catch (e: any) {
+    error = `Unable to connect to the PetPulse API engine. Reason: ${e?.message || JSON.stringify(e)}`;
   }
 
   return (
