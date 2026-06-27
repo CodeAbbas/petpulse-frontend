@@ -29,8 +29,8 @@ export interface CreateRecordResult {
 export async function createHealthRecordAction(
   input: CreateHealthRecordInput,
 ): Promise<CreateRecordResult> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("petpulse_token")?.value ?? null;
+  const store = await cookies();
+  const token = store.get("petpulse_token")?.value ?? null;
 
   try {
     const response = await healthRecordsMutations.create(input, token);

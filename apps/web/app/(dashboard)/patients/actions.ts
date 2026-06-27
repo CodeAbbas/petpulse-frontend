@@ -15,8 +15,7 @@ import {
  * These run on the server, so they can read the httpOnly session cookie
  * (which a Client Component cannot) and call the Laravel API with the
  * bearer token without ever exposing it to the browser. On success they
- * revalidate the patients route so the Server Component re-fetches and
- * the new/updated row appears.
+ * revalidate the patients route so the Server Component re-fetches.
  *
  * Each returns a discriminated result the client form can branch on:
  *   { ok: true }                              → success
@@ -30,15 +29,15 @@ export interface ActionResult {
   fieldErrors?: Record<string, string[]>;
 }
 
-function getToken(store: Awaited<ReturnType<typeof cookies>>): string | null {
+async function getToken(): Promise<string | null> {
+  const store = await cookies();
   return store.get("petpulse_token")?.value ?? null;
 }
 
 export async function createPetAction(
   input: CreatePetInput,
 ): Promise<ActionResult> {
-  const token = getToken(await cookies());
-
+  const token = await getToken();
   try {
     await petsMutations.create(input, token);
     revalidatePath("/patients");
@@ -58,8 +57,7 @@ export async function updatePetAction(
   id: string,
   input: UpdatePetInput,
 ): Promise<ActionResult> {
-  const token = getToken(await cookies());
-
+  const token = await getToken();
   try {
     await petsMutations.update(id, input, token);
     revalidatePath("/patients");
@@ -76,8 +74,7 @@ export async function updatePetAction(
 }
 
 export async function deletePetAction(id: string): Promise<ActionResult> {
-  const token = getToken(await cookies());
-
+  const token = await getToken();
   try {
     await petsMutations.remove(id, token);
     revalidatePath("/patients");

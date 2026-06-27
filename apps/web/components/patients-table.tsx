@@ -43,9 +43,6 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
   const [, startTransition] = useTransition()
 
-  // Pets come from the server (initialPets). After a mutation we call
-  // router.refresh(), which re-runs the Server Component fetch and feeds
-  // fresh initialPets back in — so we render directly from the prop.
   const pets = initialPets
 
   const editing = useMemo(
@@ -191,7 +188,7 @@ export function PatientsTable({ initialPets }: { initialPets: Pet[] }) {
                       {truncateId(pet.owner.id, 10)}
                     </td>
                     <td className="px-5 py-3 text-right font-mono">
-                      {pet.metrics.current_weight_kg
+                      {pet.metrics.current_weight_kg != null
                         ? `${pet.metrics.current_weight_kg.toFixed(1)}`
                         : '—'}
                     </td>
