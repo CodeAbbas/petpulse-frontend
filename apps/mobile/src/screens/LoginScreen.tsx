@@ -13,8 +13,9 @@ import {
 import { useAuth } from "../context/AuthContext";
 
 /**
- * Minimal authentication screen for the owner app. Toggles between login
- * and register against the Sanctum endpoints already wired in AuthContext.
+ * Minimal authentication screen. Toggles between login and register
+ * against the Sanctum endpoints wired in AuthContext. On success,
+ * AuthContext flips isAuthenticated and AppTabs swaps this screen out.
  */
 export function LoginScreen() {
   const { login, register } = useAuth();
@@ -36,8 +37,6 @@ export function LoginScreen() {
       } else {
         await register(name.trim(), email.trim(), password, confirm);
       }
-      // On success, AuthContext flips isAuthenticated and the app shell
-      // swaps this screen out for AppTabs automatically.
     } catch (e) {
       setError(
         mode === "login"

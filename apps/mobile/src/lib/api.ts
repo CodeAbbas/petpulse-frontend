@@ -111,6 +111,8 @@ export const authApi = {
 };
 // ─── apps/mobile/src/lib/api.ts ─────────────
 
+// ─── APPEND TO apps/mobile/src/lib/api.ts (after the authApi export) ─────
+
 export interface PetMetrics {
   current_weight_kg: number | null;
   current_bmi: number | null;

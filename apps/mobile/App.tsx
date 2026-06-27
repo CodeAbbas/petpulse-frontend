@@ -7,15 +7,14 @@ import { NotificationProvider } from "./src/context/NotificationContext";
 import { AppTabs } from "./src/navigation/AppTabs";
 import { DebugScreen } from "./src/screens/DebugScreen";
 
-// 🚨 Keep this outside the component lifecycle so MIUI doesn't kill the
-// thread execution path. Handles background/killed-state FCM messages.
+// 🚨 Keep this outside the component lifecycle so MIUI doesn't kill the thread execution path
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   console.log("Message handled in the background/quit state!", remoteMessage);
 });
 
 export default function App() {
   useEffect(() => {
-    // Foreground FCM listener — surfaces an alert while the app is open.
+    // Foreground listener handler setup
     const unsubscribe = messaging().onMessage(async (remoteMessage) => {
       console.log("A new FCM message arrived in foreground!", remoteMessage);
       Alert.alert(
@@ -54,9 +53,8 @@ function RootContent() {
 }
 
 // ─── Development-only dual-mode shell ────────────────────────────────────
-// Everything below is unreachable in production via the __DEV__ guard in
-// RootContent. It is an AT3 demonstration scaffold, not a shipped feature:
-// it lets the presenter switch between the real owner app and the
+// Unreachable in production via the __DEV__ guard. A demonstration scaffold
+// that lets the presenter switch between the real owner app and the
 // Simulation Controller without rebuilding.
 
 function DevModeShell() {
@@ -70,7 +68,6 @@ function DevModeShell() {
         <DebugScreen petId={DEMO_PET_ID} petName={DEMO_PET_NAME} />
       )}
 
-      {/* Hidden corner toggle, dev builds only. */}
       <Pressable
         style={styles.toggle}
         onPress={() => setMode((m) => (m === "app" ? "debug" : "app"))}
@@ -81,9 +78,8 @@ function DevModeShell() {
   );
 }
 
-// Fallback pet context for the Debug panel when no pet has been created
-// yet during a demo. The DebugScreen itself falls back to this UUID; on
-// the day, create Luna first so a real pet drives the event.
+// Fallback pet context for the Debug panel. On the day, create a pet first
+// so a real UUID drives the simulated event.
 const DEMO_PET_ID = "9db449be-4698-43fa-9dcc-7b3f81b89ff8";
 const DEMO_PET_NAME = "Luna";
 

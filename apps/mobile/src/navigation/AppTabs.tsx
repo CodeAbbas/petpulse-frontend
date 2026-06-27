@@ -10,12 +10,8 @@ import { PetsScreen } from "../screens/PetsScreen";
  *
  * Auth gate first: spinner while hydrating, LoginScreen when logged out.
  * Once authenticated, a minimal zero-dependency screen-state router
- * switches between the pets list and the add-pet form. A `refreshKey`
- * is bumped on successful creation so PetsScreen re-mounts and re-fetches,
- * surfacing the new pet without a navigation library.
- *
- * This is the natural seam to drop in React Navigation (bottom tabs)
- * post-submission; for the current screen count, state is sufficient.
+ * switches between the pets list and the add-pet form. A refreshKey is
+ * bumped on successful creation so PetsScreen re-mounts and re-fetches.
  */
 type AuthedScreen = "pets" | "addPet";
 
@@ -28,7 +24,6 @@ export function AppTabs() {
   const goToPets = useCallback(() => setScreen("pets"), []);
 
   const handleCreated = useCallback(() => {
-    // Bump the key so PetsScreen re-mounts and re-fetches, then return.
     setRefreshKey((k) => k + 1);
     setScreen("pets");
   }, []);
