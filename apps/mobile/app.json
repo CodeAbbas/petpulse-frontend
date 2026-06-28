@@ -8,7 +8,9 @@
       "useNextNotificationsApi": true,
       "permissions": [
         "NOTIFICATIONS",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
       ]
     },
     "plugins": [
@@ -17,6 +19,12 @@
         {
           "color": "#0ea5e9",
           "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "PetPulse uses your location to find the nearest 24/7 emergency clinics."
         }
       ],
       "./withFirebaseManifestFix.js",

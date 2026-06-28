@@ -1,39 +1,68 @@
-import axios, {
-  AxiosError,
-  AxiosInstance,
-  InternalAxiosRequestConfig,
-} from "axios";
-import * as SecureStore from "expo-secure-store";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useAuth } from "../context/AuthContext";
+import { useNotifications } from "../context/NotificationContext";
+import { AddPetScreen } from "../screens/AddPetScreen";
+import { AlertsScreen } from "../screens/AlertsScreen";
+import { LoginScreen } from "../screens/LoginScreen";
+import { PetsScreen } from "../screens/PetsScreen";
+import { TriageScreen } from "../screens/TriageScreen";
 
 /**
- * Android emulator maps host machine's localhost to 10.0.2.2.
- * For iOS simulator use http://localhost:8000.
- * For a physical device use the dev machine's LAN IP.
+ * The owner application shell.
+ *
+ * Auth gate first: spinner while hydrating, LoginScreen when logged out.
+ * Once authenticated, a zero-dependency bottom tab bar switches between
+ * Pets (with an add-pet sub-flow), Alerts (FR-07), and Triage (FR-08).
+ *
+ * When a push notification is tapped, NotificationContext sets
+ * pendingDeepLink; this component watches it and switches to the Alerts
+ * tab automatically, satisfying the AT2 deep-link requirement.
  */
-export const API_BASE_URL = "http://172.17.15.142:8000/api/v1";
+type Tab = "pets" | "alerts" | "triage";
+type PetsSubScreen = "list" | "addPet";
 
-const TOKEN_KEY = "petpulse_auth_token";
+export function AppTabs() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const { alerts, pendingDeepLink, consumeDeepLink } = useNotifications();
 
-export const tokenStore = {
-  get: () => SecureStore.getItemAsync(TOKEN_KEY),
-  set: (token: string) => SecureStore.setItemAsync(TOKEN_KEY, token),
-  clear: () => SecureStore.deleteItemAsync(TOKEN_KEY),
-};
+  const [tab, setTab] = useState<Tab>("pets");
+  const [petsSub, setPetsSub] = useState<PetsSubScreen>("list");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [deepLinkTarget, setDeepLinkTarget] = useState<string | null>(null);
 
-/**
- * Callback the AuthContext registers so a 401 can force a global logout
- * without api.ts importing React state directly.
- */
-let onUnauthorized: (() => void) | null = null;
-export const registerUnauthorizedHandler = (handler: () => void) => {
-  onUnauthorized = handler;
-};
+  const goToAddPet = useCallback(() => setPetsSub("addPet"), []);
+  const goToPetsList = useCallback(() => setPetsSub("list"), []);
 
-export const api: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  headers: { Accept: "application/json", "Content-Type": "application/json" },
-  timeout: 15000,
-});
+  const handleCreated = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+    setPetsSub("list");
+  }, []);
+
+  // Deep-link: a tapped notification switches to the Alerts tab and
+  // highlights the targeted event.
+  useEffect(() => {
+    if (pendingDeepLink) {
+      setTab("alerts");
+      setPetsSub("list"); // ensure we're not stuck in the add-pet sub-flow
+      setDeepLinkTarget(pendingDeepLink);
+      consumeDeepLink();
+    }
+  }, [pendingDeepLink, consumeDeepLink]);
+
+  if (isLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color="#0ea5e9" size="large" />
+      </View>
+    );
+  }
 
 // Request interceptor — inject the Sanctum bearer token.
 api.interceptors.request.use(
@@ -47,25 +76,75 @@ api.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
-// Response interceptor — on 401, clear the token and trigger logout.
-api.interceptors.response.use(
-  (response) => response,
-  async (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      await tokenStore.clear();
-      onUnauthorized?.();
-    }
-    return Promise.reject(error);
-  },
-);
+  // Add-pet is a full-screen sub-flow over the Pets tab.
+  if (tab === "pets" && petsSub === "addPet") {
+    return <AddPetScreen onCreated={handleCreated} onCancel={goToPetsList} />;
+  }
 
-// ─── Typed API surface ───────────────────────────────────────────
+  const alertCount = alerts.length;
 
-export interface AuthUser {
-  id: string;
-  name: string;
-  email: string;
-  role: "owner" | "vet" | "admin";
+  return (
+    <View style={styles.shell}>
+      <View style={styles.screen}>
+        {tab === "pets" && <PetsScreen key={refreshKey} onAddPet={goToAddPet} />}
+        {tab === "alerts" && <AlertsScreen deepLinkEventId={deepLinkTarget} />}
+        {tab === "triage" && <TriageScreen />}
+      </View>
+
+      <View style={styles.tabBar}>
+        <TabButton
+          label="My Pets"
+          active={tab === "pets"}
+          onPress={() => setTab("pets")}
+        />
+        <TabButton
+          label="Alerts"
+          active={tab === "alerts"}
+          onPress={() => setTab("alerts")}
+          badge={alertCount > 0 ? alertCount : undefined}
+        />
+        <TabButton
+          label="Triage"
+          active={tab === "triage"}
+          onPress={() => setTab("triage")}
+          accent="#ef4444"
+        />
+      </View>
+    </View>
+  );
+}
+
+function TabButton({
+  label,
+  active,
+  onPress,
+  accent = "#0ea5e9",
+  badge,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  accent?: string;
+  badge?: number;
+}) {
+  return (
+    <Pressable onPress={onPress} style={styles.tabBtn}>
+      <View
+        style={[
+          styles.tabIndicator,
+          { backgroundColor: active ? accent : "transparent" },
+        ]}
+      />
+      <View style={styles.tabLabelRow}>
+        <Text style={[styles.tabLabel, active && { color: accent }]}>{label}</Text>
+        {badge !== undefined && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{badge > 9 ? "9+" : badge}</Text>
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
 }
 
 interface AuthResponse {
@@ -82,79 +161,27 @@ export const authApi = {
     });
     return data.data;
   },
-
-  register: async (
-    name: string,
-    email: string,
-    password: string,
-    passwordConfirmation: string,
-    deviceName = "mobile-device",
-  ) => {
-    const { data } = await api.post<AuthResponse>("/auth/register", {
-      name,
-      email,
-      password,
-      password_confirmation: passwordConfirmation,
-      device_name: deviceName,
-    });
-    return data.data;
+  shell: { flex: 1, backgroundColor: "#04060e" },
+  screen: { flex: 1 },
+  tabBar: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "#04060e",
+    paddingBottom: 8,
   },
-
-  logout: async () => {
-    await api.post("/auth/logout");
+  tabBtn: { flex: 1, alignItems: "center", paddingVertical: 12, gap: 6 },
+  tabIndicator: { width: 28, height: 3, borderRadius: 2 },
+  tabLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  tabLabel: { color: "#64748b", fontSize: 13, fontWeight: "600" },
+  badge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    backgroundColor: "#ef4444",
+    alignItems: "center",
+    justifyContent: "center",
   },
-
-  me: async () => {
-    const { data } = await api.get<{ data: { user: AuthUser } }>("/auth/me");
-    return data.data.user;
-  },
-};
-
-// ─── Pet API surface ─────────────────────────────────────────────
-
-export interface PetMetrics {
-  current_weight_kg: number | null;
-  current_bmi: number | null;
-  current_bmr_kcal: number | null;
-}
-
-export interface Pet {
-  id: string;
-  name: string;
-  species: "dog" | "cat";
-  breed: string | null;
-  sex: "male" | "female" | "unknown";
-  date_of_birth: string | null;
-  age_years: number | null;
-  microchip_number: string | null;
-  metrics: PetMetrics;
-  owner: { id: string };
-  timestamps: { created_at: string; updated_at: string };
-}
-
-interface PetListResponse {
-  data: Pet[];
-  meta: { total: number };
-}
-
-interface PetSingleResponse {
-  data: Pet;
-}
-
-export const petsApi = {
-  list: async (): Promise<Pet[]> => {
-    const { data } = await api.get<PetListResponse>("/pets");
-    return data.data;
-  },
-
-  create: async (input: {
-    name: string;
-    species: "dog" | "cat";
-    breed?: string;
-    sex?: "male" | "female" | "unknown";
-    date_of_birth?: string;
-  }): Promise<Pet> => {
-    const { data } = await api.post<PetSingleResponse>("/pets", input);
-    return data.data;
-  },
-};
+  badgeText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+});
