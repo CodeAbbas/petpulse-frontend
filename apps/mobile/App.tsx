@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Alert, Pressable, StatusBar, StyleSheet, Text, View } from "react-native";
+import React, { useState } from "react";
+import { Pressable, StatusBar, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import messaging from "@react-native-firebase/messaging";
 import { AuthProvider } from "./src/context/AuthContext";
@@ -9,24 +9,16 @@ import { DebugScreen } from "./src/screens/DebugScreen";
 
 // 🚨 Keep this outside the component lifecycle so MIUI doesn't kill the
 // thread execution path. Handles background/killed-state FCM messages.
+//
+// NOTE: the FOREGROUND onMessage handler lives in NotificationContext —
+// it is the single owner of incoming-alert state. Do NOT register a second
+// onMessage here; two registrations against the messaging() singleton
+// compete and make the alert-state update unreliable.
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   console.log("Message handled in the background/quit state!", remoteMessage);
 });
 
 export default function App() {
-  useEffect(() => {
-    // Foreground FCM listener — surfaces an alert while the app is open.
-    const unsubscribe = messaging().onMessage(async (remoteMessage) => {
-      console.log("A new FCM message arrived in foreground!", remoteMessage);
-      Alert.alert(
-        remoteMessage.notification?.title || "Alert",
-        remoteMessage.notification?.body || "New event recorded.",
-      );
-    });
-
-    return unsubscribe;
-  }, []);
-
   return (
     <SafeAreaProvider>
       <AuthProvider>
@@ -84,7 +76,7 @@ function DevModeShell() {
 // Fallback pet context for the Debug panel when no pet has been created
 // yet during a demo. The DebugScreen itself falls back to this UUID; on
 // the day, create Luna first so a real pet drives the event.
-const DEMO_PET_ID = "9db449be-4698-43fa-9dcc-7b3f81b89ff8";
+const DEMO_PET_ID = "0c088416-30f4-4859-904e-e275d49793cd";
 const DEMO_PET_NAME = "Luna";
 
 const styles = StyleSheet.create({
