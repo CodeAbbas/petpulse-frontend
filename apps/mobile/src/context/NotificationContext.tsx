@@ -6,13 +6,11 @@ import React, {
   useRef,
   useState,
 } from "react";
-import messaging from "@react-native-firebase/messaging";
-import * as Notifications from "expo-notifications";
+import messaging, {
+  FirebaseMessagingTypes,
+} from "@react-native-firebase/messaging";
 import { useAuth } from "./AuthContext";
-import {
-  ensureNotificationChannel,
-  getInitialNotification,
-} from "../lib/notifications";
+import { ensureNotificationChannel } from "../lib/notifications";
 import { registerTokenRefreshHandler, syncFcmToken } from "../lib/fcmToken";
 
 export interface BehavioralAlert {
@@ -30,8 +28,7 @@ interface NotificationContextValue {
   /**
    * Set to the event_id when a notification is TAPPED (or launched the app
    * from a killed state). AppTabs watches this to deep-link to the Alerts
-   * screen, per the AT2 UX spec. Consumers call consumeDeepLink() after
-   * routing so it fires once.
+   * screen. Consumers call consumeDeepLink() after routing so it fires once.
    */
   pendingDeepLink: string | null;
   consumeDeepLink: () => void;
@@ -41,58 +38,60 @@ const NotificationContext = createContext<NotificationContextValue | undefined>(
   undefined,
 );
 
+/**
+ * Build a BehavioralAlert from an FCM RemoteMessage's data block.
+ * The backend FcmService sends { event_id, pet_id, event_type, severity }
+ * in `data`, and title/body in `notification`.
+ */
+function alertFromRemoteMessage(
+  message: FirebaseMessagingTypes.RemoteMessage,
+): BehavioralAlert | null {
+  const data = (message.data ?? {}) as Record<string, string>;
+  if (!data.event_id) return null;
+  return {
+    event_id: data.event_id,
+    pet_id: data.pet_id ?? "",
+    event_type: data.event_type ?? "unknown",
+    severity: data.severity ?? "info",
+    body: message.notification?.body ?? data.body ?? "Behavioral alert detected",
+    received_at: Date.now(),
+  };
+}
+
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const [alerts, setAlerts] = useState<BehavioralAlert[]>([]);
   const [pendingDeepLink, setPendingDeepLink] = useState<string | null>(null);
-  const responseSub = useRef<Notifications.Subscription | null>(null);
   const coldStartHandled = useRef(false);
 
   const addAlert = useCallback((alert: BehavioralAlert) => {
     setAlerts((prev) => {
-      // De-dupe: prevent identical event configurations from stacking
+      // De-dupe: a tapped notification can also have fired the foreground
+      // listener earlier, and retries share an event_id.
       if (prev.some((a) => a.event_id === alert.event_id)) return prev;
       return [alert, ...prev];
     });
   }, []);
 
-  const alertFromNotification = useCallback(
-    (notification: Notifications.Notification): BehavioralAlert | null => {
-      const data = notification.request.content.data as Record<string, string>;
-      if (!data?.event_id) return null;
-      return {
-        event_id: data.event_id,
-        pet_id: data.pet_id ?? "",
-        event_type: data.event_type ?? "unknown",
-        severity: data.severity ?? "info",
-        body: notification.request.content.body ?? "New alert",
-        received_at: Date.now(),
-      };
-    },
-    [],
-  );
-
   // ── On mount: create channel + handle killed-state cold start ──
   useEffect(() => {
     void ensureNotificationChannel();
 
-    // If the app was launched by tapping a push (killed state), retrieve it
-    // here — and deep-link to it, since a cold start IS a tap.
+    // Firebase: if the app was launched from a KILLED state by tapping an
+    // FCM notification, getInitialNotification() returns it once. A cold
+    // start IS a tap, so we deep-link to it.
     if (!coldStartHandled.current) {
       coldStartHandled.current = true;
-      void getInitialNotification().then((data) => {
-        if (data?.event_id) {
-          addAlert({
-            event_id: data.event_id,
-            pet_id: data.pet_id ?? "",
-            event_type: data.event_type ?? "unknown",
-            severity: data.severity ?? "info",
-            body: data.body ?? "Behavioral alert detected",
-            received_at: Date.now(),
-          });
-          setPendingDeepLink(data.event_id);
-        }
-      });
+      void messaging()
+        .getInitialNotification()
+        .then((message) => {
+          if (!message) return;
+          const alert = alertFromRemoteMessage(message);
+          if (alert) {
+            addAlert(alert);
+            setPendingDeepLink(alert.event_id);
+          }
+        });
     }
   }, [addAlert]);
 
@@ -106,40 +105,25 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     return unsubscribe;
   }, [isAuthenticated]);
 
-  // Foreground (received) + interaction (tapped) listeners.
+  // ── FCM listeners (all via Firebase — the channel the backend sends to) ──
   useEffect(() => {
-    // 1. Native Firebase Foreground Listener with Telemetry
-    const unsubscribeFirebaseForeground = messaging().onMessage(async (remoteMessage) => {
-      // 🚨 TELEMETRY LOG: Spits out the exact payload shape arriving from the backend
-      console.log("🔥 FOREGROUND FCM RECEIVED:", JSON.stringify(remoteMessage, null, 2));
-
-      const data = remoteMessage.data as Record<string, string>;
-      if (!data) {
-        console.log("⚠️ FCM Drop: No data payload found in remote message.");
-        return;
+    // 1. FOREGROUND: message arrives while the app is open. Update state.
+    const unsubscribeForeground = messaging().onMessage(async (remoteMessage) => {
+      console.log("🔥 FOREGROUND FCM:", JSON.stringify(remoteMessage?.data));
+      const alert = alertFromRemoteMessage(remoteMessage);
+      if (alert) {
+        addAlert(alert);
+      } else {
+        console.log("⚠️ FCM drop: no event_id in data block.");
       }
-
-      console.log("📊 Extracted Payload Data Block:", data);
-
-      if (!data.event_id) {
-        console.log("⚠️ FCM Drop: 'event_id' key missing or named differently in data block.");
-        return;
-      }
-
-      addAlert({
-        event_id: data.event_id,
-        pet_id: data.pet_id ?? "",
-        event_type: data.event_type ?? "unknown",
-        severity: data.severity ?? "info",
-        body: remoteMessage.notification?.body ?? data.body ?? "Behavioral alert detected",
-        received_at: Date.now(),
-      });
     });
 
-    // 2. Tap on a notification tray item
-    responseSub.current = Notifications.addNotificationResponseReceivedListener(
-      (response) => {
-        const alert = alertFromNotification(response.notification);
+    // 2. BACKGROUND-TAP: app was backgrounded (not killed) and the user
+    // tapped the notification. Firebase fires this — Expo's listener would
+    // NOT, since these are direct FCM messages. Log AND deep-link.
+    const unsubscribeOpened = messaging().onNotificationOpenedApp(
+      (remoteMessage) => {
+        const alert = alertFromRemoteMessage(remoteMessage);
         if (alert) {
           addAlert(alert);
           setPendingDeepLink(alert.event_id);
@@ -148,10 +132,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     );
 
     return () => {
-      unsubscribeFirebaseForeground();
-      responseSub.current?.remove();
+      unsubscribeForeground();
+      unsubscribeOpened();
     };
-  }, [addAlert, alertFromNotification]);
+  }, [addAlert]);
 
   const clearAlerts = useCallback(() => setAlerts([]), []);
   const consumeDeepLink = useCallback(() => setPendingDeepLink(null), []);
