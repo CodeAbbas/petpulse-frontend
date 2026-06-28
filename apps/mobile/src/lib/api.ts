@@ -10,7 +10,7 @@ import * as SecureStore from "expo-secure-store";
  * For iOS simulator use http://localhost:8000.
  * For a physical device use the dev machine's LAN IP.
  */
-export const API_BASE_URL = "http://172.17.15.142:8000/api/v1";
+export const API_BASE_URL = "http://192.168.0.32:8000/api/v1";
 
 const TOKEN_KEY = "petpulse_auth_token";
 
@@ -155,6 +155,69 @@ export const petsApi = {
     date_of_birth?: string;
   }): Promise<Pet> => {
     const { data } = await api.post<PetSingleResponse>("/pets", input);
+    return data.data;
+  },
+};
+// ─── Clinic API surface (FR-08 Smart Triage) ─────────────────────
+export interface Clinic {
+  id: string;
+  name: string;
+  address: {
+    line_1: string;
+    line_2: string | null;
+    city: string;
+    postcode: string;
+    country_code: string;
+  };
+  location: { latitude: number; longitude: number };
+  phone_e164: string;
+  is_emergency_24_7: boolean;
+  rating: number | null;
+  distance_km: number | null;
+}
+
+interface ClinicListResponse {
+  data: Clinic[];
+}
+
+export const clinicsApi = {
+  list: async (params?: { emergency?: boolean; lat?: number; lng?: number; }): Promise<Clinic[]> => {
+    const { data } = await api.get<ClinicListResponse>("/clinics", {
+      params: {
+        ...(params?.emergency ? { emergency: 1 } : {}),
+        ...(params?.lat != null ? { lat: params.lat } : {}),
+        ...(params?.lng != null ? { lng: params.lng } : {}),
+      },
+    });
+    return data.data;
+  },
+};
+
+// ─── Health Record API surface (FR-03 visibility) ────────────────
+export interface HealthRecord {
+  id: string;
+  record_type: string;
+  vitals: {
+    weight_kg: number | null;
+    height_cm: number | null;
+    temperature_c: number | null;
+    heart_rate_bpm: number | null;
+  };
+  computed_metrics: { bmi: number | null; bmr_kcal: number | null; };
+  summary: string;
+  detail: string | null;
+  pet: { id: string; name: string | null };
+  recorded_by: { id: string | null };
+  recorded_at: string;
+}
+
+interface HealthRecordListResponse {
+  data: HealthRecord[];
+}
+
+export const healthRecordsApi = {
+  list: async (): Promise<HealthRecord[]> => {
+    const { data } = await api.get<HealthRecordListResponse>("/health-records");
     return data.data;
   },
 };

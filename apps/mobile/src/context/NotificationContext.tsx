@@ -11,7 +11,6 @@ import { useAuth } from "./AuthContext";
 import {
   ensureNotificationChannel,
   getInitialNotification,
-  registerForPushNotifications,
 } from "../lib/notifications";
 import { registerTokenRefreshHandler, syncFcmToken } from "../lib/fcmToken";
 
@@ -27,6 +26,14 @@ export interface BehavioralAlert {
 interface NotificationContextValue {
   alerts: BehavioralAlert[];
   clearAlerts: () => void;
+  /**
+   * Set to the event_id when a notification is TAPPED (or launched the app
+   * from a killed state). AppTabs watches this to deep-link to the Alerts
+   * screen, per the AT2 UX spec. Consumers call consumeDeepLink() after
+   * routing so it fires once.
+   */
+  pendingDeepLink: string | null;
+  consumeDeepLink: () => void;
 }
 
 const NotificationContext = createContext<NotificationContextValue | undefined>(
@@ -36,86 +43,104 @@ const NotificationContext = createContext<NotificationContextValue | undefined>(
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const [alerts, setAlerts] = useState<BehavioralAlert[]>([]);
+  const [pendingDeepLink, setPendingDeepLink] = useState<string | null>(null);
   const receivedSub = useRef<Notifications.Subscription | null>(null);
   const responseSub = useRef<Notifications.Subscription | null>(null);
   const coldStartHandled = useRef(false);
 
-  const pushAlert = useCallback((notification: Notifications.Notification) => {
-    const data = notification.request.content.data as Record<string, string>;
-    if (!data?.event_id) return;
+  const addAlert = useCallback((alert: BehavioralAlert) => {
+    setAlerts((prev) => {
+      // De-dupe: a tapped notification can also fire the received listener.
+      if (prev.some((a) => a.event_id === alert.event_id)) return prev;
+      return [alert, ...prev];
+    });
+  }, []);
 
-    setAlerts((prev) => [
-      {
+  const alertFromNotification = useCallback(
+    (notification: Notifications.Notification): BehavioralAlert | null => {
+      const data = notification.request.content.data as Record<string, string>;
+      if (!data?.event_id) return null;
+      return {
         event_id: data.event_id,
         pet_id: data.pet_id ?? "",
         event_type: data.event_type ?? "unknown",
         severity: data.severity ?? "info",
         body: notification.request.content.body ?? "New alert",
         received_at: Date.now(),
-      },
-      ...prev,
-    ]);
-  }, []);
+      };
+    },
+    [],
+  );
 
   // ── On mount: create channel + handle killed-state cold start ──
   useEffect(() => {
-    // Channel MUST exist before any notification can display on Android 8+.
     void ensureNotificationChannel();
 
-    // If the app was launched by tapping a push (killed state), retrieve
-    // it here — the live listeners below only catch notifications that
-    // arrive while JS is already running.
+    // If the app was launched by tapping a push (killed state), retrieve it
+    // here — and deep-link to it, since a cold start IS a tap.
     if (!coldStartHandled.current) {
       coldStartHandled.current = true;
       void getInitialNotification().then((data) => {
         if (data?.event_id) {
-          setAlerts((prev) => [
-            {
-              event_id: data.event_id,
-              pet_id: data.pet_id ?? "",
-              event_type: data.event_type ?? "unknown",
-              severity: data.severity ?? "info",
-              body: data.body ?? "Behavioral alert detected",
-              received_at: Date.now(),
-            },
-            ...prev,
-          ]);
+          addAlert({
+            event_id: data.event_id,
+            pet_id: data.pet_id ?? "",
+            event_type: data.event_type ?? "unknown",
+            severity: data.severity ?? "info",
+            body: data.body ?? "Behavioral alert detected",
+            received_at: Date.now(),
+          });
+          setPendingDeepLink(data.event_id);
         }
       });
     }
-  }, []);
+  }, [addAlert]);
 
   // Sync the FCM token once authenticated, and keep it synced on refresh.
   useEffect(() => {
     if (!isAuthenticated) {
       return;
     }
-
-    // Boot sync: push the current native token to the backend.
     void syncFcmToken();
-
-    // Subscribe to token rotation so the DB never holds a stale token.
     const unsubscribe = registerTokenRefreshHandler();
     return unsubscribe;
   }, [isAuthenticated]);
 
-  // Foreground + interaction listeners (for non-cold-start taps).
+  // Foreground (received) + interaction (tapped) listeners.
   useEffect(() => {
-    receivedSub.current = Notifications.addNotificationReceivedListener(pushAlert);
+    // Foreground arrival: log the alert but do NOT deep-link (user didn't tap).
+    receivedSub.current = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        const alert = alertFromNotification(notification);
+        if (alert) addAlert(alert);
+      },
+    );
+
+    // Tap on a notification (app foreground/background, not killed):
+    // log the alert AND deep-link to the Alerts screen.
     responseSub.current = Notifications.addNotificationResponseReceivedListener(
-      (response) => pushAlert(response.notification),
+      (response) => {
+        const alert = alertFromNotification(response.notification);
+        if (alert) {
+          addAlert(alert);
+          setPendingDeepLink(alert.event_id);
+        }
+      },
     );
 
     return () => {
       receivedSub.current?.remove();
       responseSub.current?.remove();
     };
-  }, [pushAlert]);
+  }, [addAlert, alertFromNotification]);
 
   const clearAlerts = useCallback(() => setAlerts([]), []);
+  const consumeDeepLink = useCallback(() => setPendingDeepLink(null), []);
 
   return (
-    <NotificationContext.Provider value={{ alerts, clearAlerts }}>
+    <NotificationContext.Provider
+      value={{ alerts, clearAlerts, pendingDeepLink, consumeDeepLink }}
+    >
       {children}
     </NotificationContext.Provider>
   );
