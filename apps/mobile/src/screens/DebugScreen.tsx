@@ -38,10 +38,8 @@ export function DebugScreen({ petId, petName }: DebugScreenProps) {
   async function triggerMockEvent() {
     setBusy(true);
 
-    // Fallback directly to the hardcoded UUID if petId prop is missing
-    const targetId = petId === "REPLACE_WITH_LUNA_UUID_AT_DEMO_TIME" 
-      ? "9db449be-4698-43fa-9dcc-7b3f81b89ff8" 
-      : petId;
+    // 1. Align with your actual live database UUID for Luna
+    const targetId = "0c088416-30f4-4859-904e-e275d49793cd";
 
     const payload = {
       event_id: uuidv4(),
@@ -53,20 +51,27 @@ export function DebugScreen({ petId, petName }: DebugScreenProps) {
     };
 
     try {
-      // BULLETPROOF OVERRIDE: Hardcoded fetch using your exact laptop IP
-      const response = await fetch("http://192.168.0.32:8000/api/v1/behavioral-events", {
+      // 2. Derive the URL base dynamically from your configuration profile
+      // Fallback safely to your current active home Wi-Fi endpoint IP if needed
+      const baseUrl = process.env.EXPO_PUBLIC_API_URL 
+        ? process.env.EXPO_PUBLIC_API_URL.replace('/api/v1', '') 
+        : "http://192.168.0.32:8000";
+
+      const response = await fetch(`${baseUrl}/api/v1/behavioral-events`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Accept": "application/json",
           "X-Webhook-Secret": "AR9q6eCSYbPjhdfyjadgtfe",
         },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP Error: ${response.status}`);
+        const errorJson = await response.json().catch(() => ({}));
+        const validationMessage = errorJson.message || `HTTP Error: ${response.status}`;
+        throw new Error(validationMessage);
       }
-
       setLog((prev) => [
         { ok: true, message: `Dispatched "${selected}" for ${petName}`, at: Date.now() },
         ...prev,

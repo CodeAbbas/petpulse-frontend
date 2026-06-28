@@ -64,17 +64,9 @@ export function AppTabs() {
     );
   }
 
-// Request interceptor — inject the Sanctum bearer token.
-api.interceptors.request.use(
-  async (config: InternalAxiosRequestConfig) => {
-    const token = await tokenStore.get();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
+  if (!isAuthenticated) {
+    return <LoginScreen />;
+  }
 
   // Add-pet is a full-screen sub-flow over the Pets tab.
   if (tab === "pets" && petsSub === "addPet") {
@@ -147,19 +139,12 @@ function TabButton({
   );
 }
 
-interface AuthResponse {
-  data: { user: AuthUser; token: string };
-  meta: { token_type: string };
-}
-
-export const authApi = {
-  login: async (email: string, password: string, deviceName = "mobile-device") => {
-    const { data } = await api.post<AuthResponse>("/auth/login", {
-      email,
-      password,
-      device_name: deviceName,
-    });
-    return data.data;
+const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    backgroundColor: "#04060e",
+    alignItems: "center",
+    justifyContent: "center",
   },
   shell: { flex: 1, backgroundColor: "#04060e" },
   screen: { flex: 1 },

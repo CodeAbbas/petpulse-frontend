@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import messaging from "@react-native-firebase/messaging";
 import * as Notifications from "expo-notifications";
 import { useAuth } from "./AuthContext";
 import {
@@ -44,13 +45,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const { isAuthenticated } = useAuth();
   const [alerts, setAlerts] = useState<BehavioralAlert[]>([]);
   const [pendingDeepLink, setPendingDeepLink] = useState<string | null>(null);
-  const receivedSub = useRef<Notifications.Subscription | null>(null);
   const responseSub = useRef<Notifications.Subscription | null>(null);
   const coldStartHandled = useRef(false);
 
   const addAlert = useCallback((alert: BehavioralAlert) => {
     setAlerts((prev) => {
-      // De-dupe: a tapped notification can also fire the received listener.
+      // De-dupe: prevent identical event configurations from stacking
       if (prev.some((a) => a.event_id === alert.event_id)) return prev;
       return [alert, ...prev];
     });
@@ -108,16 +108,35 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   // Foreground (received) + interaction (tapped) listeners.
   useEffect(() => {
-    // Foreground arrival: log the alert but do NOT deep-link (user didn't tap).
-    receivedSub.current = Notifications.addNotificationReceivedListener(
-      (notification) => {
-        const alert = alertFromNotification(notification);
-        if (alert) addAlert(alert);
-      },
-    );
+    // 1. Native Firebase Foreground Listener with Telemetry
+    const unsubscribeFirebaseForeground = messaging().onMessage(async (remoteMessage) => {
+      // 🚨 TELEMETRY LOG: Spits out the exact payload shape arriving from the backend
+      console.log("🔥 FOREGROUND FCM RECEIVED:", JSON.stringify(remoteMessage, null, 2));
 
-    // Tap on a notification (app foreground/background, not killed):
-    // log the alert AND deep-link to the Alerts screen.
+      const data = remoteMessage.data as Record<string, string>;
+      if (!data) {
+        console.log("⚠️ FCM Drop: No data payload found in remote message.");
+        return;
+      }
+
+      console.log("📊 Extracted Payload Data Block:", data);
+
+      if (!data.event_id) {
+        console.log("⚠️ FCM Drop: 'event_id' key missing or named differently in data block.");
+        return;
+      }
+
+      addAlert({
+        event_id: data.event_id,
+        pet_id: data.pet_id ?? "",
+        event_type: data.event_type ?? "unknown",
+        severity: data.severity ?? "info",
+        body: remoteMessage.notification?.body ?? data.body ?? "Behavioral alert detected",
+        received_at: Date.now(),
+      });
+    });
+
+    // 2. Tap on a notification tray item
     responseSub.current = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         const alert = alertFromNotification(response.notification);
@@ -129,7 +148,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     );
 
     return () => {
-      receivedSub.current?.remove();
+      unsubscribeFirebaseForeground();
       responseSub.current?.remove();
     };
   }, [addAlert, alertFromNotification]);
