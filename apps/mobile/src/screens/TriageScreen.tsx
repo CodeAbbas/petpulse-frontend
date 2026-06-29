@@ -1,17 +1,25 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import * as Location from "expo-location";
+import Mapbox, {
+  Camera,
+  MapView,
+  MarkerView,
+  PointAnnotation,
+} from "@rnmapbox/maps";
 import { Clinic, clinicsApi } from "../lib/api";
+
+// Public token (pk....) — safe to ship; rate-limited by Mapbox.
+Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? "");
 
 type LocationState =
   | { status: "resolving" }
@@ -20,28 +28,22 @@ type LocationState =
   | { status: "error" };
 
 /**
- * Smart Triage (FR-08): lists 24/7 emergency clinics, nearest-first using
- * the device's GPS position when permission is granted. Each clinic offers
- * a one-tap call and directions via the device's native maps app.
- *
- * Location is resolved via expo-location. If permission is denied or GPS
- * fails, the screen falls back to a rating-sorted clinic list — the
- * feature still works, just without distance ordering.
+ * Smart Triage (FR-08): embedded Mapbox map of 24/7 emergency clinics with
+ * the owner's live location, nearest-first list, and one-tap call /
+ * directions. Tapping a map pin highlights the matching clinic card.
  */
 export function TriageScreen() {
   const [location, setLocation] = useState<LocationState>({ status: "resolving" });
   const [clinics, setClinics] = useState<Clinic[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const cameraRef = useRef<Camera>(null);
 
-  // Resolve device location once on mount.
   const resolveLocation = useCallback(async (): Promise<LocationState> => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        return { status: "denied" };
-      }
+      if (status !== "granted") return { status: "denied" };
       const position = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
@@ -83,16 +85,6 @@ export function TriageScreen() {
     };
   }, [resolveLocation, loadClinics]);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    // Re-resolve location on pull-to-refresh in case the user moved or
-    // just granted permission in settings.
-    const loc = await resolveLocation();
-    setLocation(loc);
-    await loadClinics(loc);
-    setRefreshing(false);
-  }, [resolveLocation, loadClinics]);
-
   function call(phone: string) {
     void Linking.openURL(`tel:${phone}`);
   }
@@ -108,14 +100,25 @@ export function TriageScreen() {
     void Linking.openURL(url);
   }
 
+  function focusClinic(clinic: Clinic) {
+    setSelectedId(clinic.id);
+    cameraRef.current?.setCamera({
+      centerCoordinate: [clinic.location.longitude, clinic.location.latitude],
+      zoomLevel: 13,
+      animationDuration: 600,
+    });
+  }
+
+  // Initial camera centre: user location if known, else first clinic, else London.
+  const centre: [number, number] =
+    location.status === "granted"
+      ? [location.lng, location.lat]
+      : clinics[0]
+        ? [clinics[0].location.longitude, clinics[0].location.latitude]
+        : [-0.1278, 51.5074];
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0ea5e9" />
-      }
-    >
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Emergency Triage</Text>
         <Text style={styles.subtitle}>
@@ -124,6 +127,50 @@ export function TriageScreen() {
             : "24/7 emergency clinics"}
         </Text>
       </View>
+
+      {/* ── Embedded Mapbox map ── */}
+      {!loading && clinics.length > 0 && (
+        <View style={styles.mapWrap}>
+          <MapView style={styles.map} styleURL={Mapbox.StyleURL.Dark}>
+            <Camera
+              ref={cameraRef}
+              defaultSettings={{ centerCoordinate: centre, zoomLevel: 11 }}
+            />
+
+            {/* User location dot */}
+            {location.status === "granted" && (
+              <PointAnnotation
+                id="user-location"
+                coordinate={[location.lng, location.lat]}
+              >
+                <View style={styles.userDot}>
+                  <View style={styles.userDotInner} />
+                </View>
+              </PointAnnotation>
+            )}
+
+            {/* Clinic pins */}
+            {clinics.map((clinic) => (
+              <MarkerView
+                key={clinic.id}
+                id={clinic.id}
+                coordinate={[clinic.location.longitude, clinic.location.latitude]}
+              >
+                <Pressable onPress={() => focusClinic(clinic)}>
+                  <View
+                    style={[
+                      styles.pin,
+                      selectedId === clinic.id && styles.pinSelected,
+                    ]}
+                  >
+                    <Text style={styles.pinText}>✚</Text>
+                  </View>
+                </Pressable>
+              </MarkerView>
+            ))}
+          </MapView>
+        </View>
+      )}
 
       <View style={styles.banner}>
         <Text style={styles.bannerText}>
@@ -134,8 +181,8 @@ export function TriageScreen() {
       {location.status === "denied" && (
         <View style={styles.locNotice}>
           <Text style={styles.locNoticeText}>
-            Location off — showing clinics by rating. Enable location and pull to
-            refresh for nearest-first ordering.
+            Location off — clinics shown by rating. Enable location to see the
+            nearest first and your position on the map.
           </Text>
         </View>
       )}
@@ -145,9 +192,6 @@ export function TriageScreen() {
       ) : error ? (
         <View style={styles.errorCard}>
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable onPress={onRefresh} style={styles.retryBtn}>
-            <Text style={styles.retryText}>Retry</Text>
-          </Pressable>
         </View>
       ) : clinics.length === 0 ? (
         <View style={styles.emptyCard}>
@@ -157,7 +201,11 @@ export function TriageScreen() {
         clinics.map((clinic, index) => (
           <View
             key={clinic.id}
-            style={[styles.card, index === 0 && styles.cardNearest]}
+            style={[
+              styles.card,
+              selectedId === clinic.id && styles.cardSelected,
+              index === 0 && location.status === "granted" && styles.cardNearest,
+            ]}
           >
             {index === 0 && location.status === "granted" && (
               <View style={styles.nearestTag}>
@@ -214,6 +262,45 @@ const styles = StyleSheet.create({
   header: { marginBottom: 2 },
   title: { color: "#f1f5f9", fontSize: 22, fontWeight: "700" },
   subtitle: { color: "#64748b", fontSize: 13, marginTop: 2 },
+  mapWrap: {
+    height: 240,
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  map: { flex: 1 },
+  userDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(14,165,233,0.30)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  userDotInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#0ea5e9",
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+  pin: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#ef4444",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+  pinSelected: {
+    backgroundColor: "#0ea5e9",
+    transform: [{ scale: 1.15 }],
+  },
+  pinText: { color: "#fff", fontSize: 16, fontWeight: "900" },
   banner: {
     backgroundColor: "rgba(239,68,68,0.10)",
     borderColor: "rgba(239,68,68,0.25)",
@@ -238,6 +325,7 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 10,
   },
+  cardSelected: { borderColor: "#0ea5e9", borderWidth: 1.5 },
   cardNearest: { borderColor: "#0ea5e9", borderWidth: 1.5 },
   nearestTag: {
     position: "absolute",
@@ -269,12 +357,7 @@ const styles = StyleSheet.create({
   badgeText: { color: "#fca5a5", fontSize: 11, fontWeight: "600" },
   distance: { color: "#cbd5e1", fontSize: 13, fontWeight: "600" },
   actions: { flexDirection: "row", gap: 10, marginTop: 4 },
-  actionBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: "center",
-  },
+  actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center" },
   callBtn: { backgroundColor: "#22c55e" },
   callBtnText: { color: "#04060e", fontSize: 14, fontWeight: "700" },
   routeBtn: {
@@ -298,16 +381,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 16,
     padding: 20,
-    alignItems: "center",
-    gap: 12,
   },
-  errorText: { color: "#ef4444", fontSize: 13, textAlign: "center" },
-  retryBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#0ea5e9",
-  },
-  retryText: { color: "#0ea5e9", fontSize: 13, fontWeight: "600" },
+  errorText: { color: "#ef4444", fontSize: 13 },
 });
