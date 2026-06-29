@@ -16,15 +16,18 @@
     "plugins": [
       [
         "expo-notifications",
-        {
-          "color": "#0ea5e9",
-          "defaultChannel": "default"
-        }
+        { "color": "#0ea5e9", "defaultChannel": "default" }
       ],
       [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "PetPulse uses your location to find the nearest 24/7 emergency clinics."
+        }
+      ],
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsDownloadToken": ""
         }
       ],
       "./withFirebaseManifestFix.js",

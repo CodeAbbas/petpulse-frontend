@@ -10,6 +10,7 @@ import { useAuth } from "../context/AuthContext";
 import { useNotifications } from "../context/NotificationContext";
 import { AddPetScreen } from "../screens/AddPetScreen";
 import { AlertsScreen } from "../screens/AlertsScreen";
+import { HealthScreen } from "../screens/HealthScreen";
 import { LoginScreen } from "../screens/LoginScreen";
 import { PetsScreen } from "../screens/PetsScreen";
 import { TriageScreen } from "../screens/TriageScreen";
@@ -19,13 +20,14 @@ import { TriageScreen } from "../screens/TriageScreen";
  *
  * Auth gate first: spinner while hydrating, LoginScreen when logged out.
  * Once authenticated, a zero-dependency bottom tab bar switches between
- * Pets (with an add-pet sub-flow), Alerts (FR-07), and Triage (FR-08).
+ * Pets (with an add-pet sub-flow), Health (FR-03 records), Alerts (FR-07),
+ * and Triage (FR-08).
  *
  * When a push notification is tapped, NotificationContext sets
  * pendingDeepLink; this component watches it and switches to the Alerts
  * tab automatically, satisfying the AT2 deep-link requirement.
  */
-type Tab = "pets" | "alerts" | "triage";
+type Tab = "pets" | "health" | "alerts" | "triage";
 type PetsSubScreen = "list" | "addPet";
 
 export function AppTabs() {
@@ -45,12 +47,11 @@ export function AppTabs() {
     setPetsSub("list");
   }, []);
 
-  // Deep-link: a tapped notification switches to the Alerts tab and
-  // highlights the targeted event.
+  // Deep-link: a tapped notification switches to the Alerts tab.
   useEffect(() => {
     if (pendingDeepLink) {
       setTab("alerts");
-      setPetsSub("list"); // ensure we're not stuck in the add-pet sub-flow
+      setPetsSub("list");
       setDeepLinkTarget(pendingDeepLink);
       consumeDeepLink();
     }
@@ -68,7 +69,6 @@ export function AppTabs() {
     return <LoginScreen />;
   }
 
-  // Add-pet is a full-screen sub-flow over the Pets tab.
   if (tab === "pets" && petsSub === "addPet") {
     return <AddPetScreen onCreated={handleCreated} onCancel={goToPetsList} />;
   }
@@ -79,16 +79,14 @@ export function AppTabs() {
     <View style={styles.shell}>
       <View style={styles.screen}>
         {tab === "pets" && <PetsScreen key={refreshKey} onAddPet={goToAddPet} />}
+        {tab === "health" && <HealthScreen />}
         {tab === "alerts" && <AlertsScreen deepLinkEventId={deepLinkTarget} />}
         {tab === "triage" && <TriageScreen />}
       </View>
 
       <View style={styles.tabBar}>
-        <TabButton
-          label="My Pets"
-          active={tab === "pets"}
-          onPress={() => setTab("pets")}
-        />
+        <TabButton label="Pets" active={tab === "pets"} onPress={() => setTab("pets")} />
+        <TabButton label="Health" active={tab === "health"} onPress={() => setTab("health")} />
         <TabButton
           label="Alerts"
           active={tab === "alerts"}
@@ -158,7 +156,7 @@ const styles = StyleSheet.create({
   tabBtn: { flex: 1, alignItems: "center", paddingVertical: 12, gap: 6 },
   tabIndicator: { width: 28, height: 3, borderRadius: 2 },
   tabLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  tabLabel: { color: "#64748b", fontSize: 13, fontWeight: "600" },
+  tabLabel: { color: "#64748b", fontSize: 12, fontWeight: "600" },
   badge: {
     minWidth: 18,
     height: 18,
