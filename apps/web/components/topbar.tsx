@@ -1,11 +1,12 @@
 'use client'
 
-import { Search, Bell, Menu } from 'lucide-react'
+import { Search, Bell, Menu, LogOut } from 'lucide-react'
 import { useRole } from '@/components/role-context'
+import { logoutAction } from '@/app/login/actions'
 import { cn } from '@/lib/utils'
 
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
-  const { role, setRole } = useRole()
+  const { user, role } = useRole()
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-white/10 bg-background/60 px-4 backdrop-blur-xl md:px-8">
@@ -34,26 +35,19 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
       <div className="ml-auto flex items-center gap-3">
         <button
           type="button"
-          aria-label="Notifications, 2 unread"
+          aria-label="Notifications"
           className="relative flex size-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-muted-foreground transition-colors hover:text-foreground"
         >
           <Bell className="size-[18px]" aria-hidden="true" />
-          <span className="absolute right-2 top-2 flex size-2 items-center justify-center">
-            <span className="absolute inline-flex size-2 animate-ping rounded-full bg-critical/70" />
-            <span className="relative inline-flex size-2 rounded-full bg-critical" />
-          </span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setRole(role === 'admin' ? 'vet' : 'admin')}
-          aria-label={`Current role ${role}. Switch role.`}
-          title="Switch role (demo)"
+        {/* Authenticated user badge */}
+        <div
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium capitalize transition-colors',
+            'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium capitalize',
             role === 'admin'
-              ? 'border-secondary/30 bg-secondary/10 text-secondary hover:bg-secondary/20'
-              : 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20',
+              ? 'border-secondary/30 bg-secondary/10 text-secondary'
+              : 'border-primary/30 bg-primary/10 text-primary',
           )}
         >
           <span
@@ -62,8 +56,20 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
               role === 'admin' ? 'bg-secondary' : 'bg-primary',
             )}
           />
-          {role}
-        </button>
+          {user.name} · {role}
+        </div>
+
+        {/* Logout — uses a Server Action via form so no client-side fetch needed */}
+        <form action={logoutAction}>
+          <button
+            type="submit"
+            aria-label="Sign out"
+            title="Sign out"
+            className="flex size-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
+          >
+            <LogOut className="size-[18px]" aria-hidden="true" />
+          </button>
+        </form>
       </div>
     </header>
   )

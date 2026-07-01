@@ -1,30 +1,59 @@
-'use client'
+import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { DashboardShell } from '@/components/dashboard-shell'
+import type { CurrentUser } from '@/lib/types'
 
-import { useState } from 'react'
-import { RoleProvider } from '@/components/role-context'
-import { Sidebar } from '@/components/sidebar'
-import { Topbar } from '@/components/topbar'
-import { currentUser } from '@/lib/mock-data'
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1'
 
-export default function DashboardLayout({
+async function fetchCurrentUser(token: string): Promise<CurrentUser | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+    })
+    if (!res.ok) return null
+    const body = await res.json() as {
+      data: { user: { id: string; name: string; role: string } }
+    }
+    const u = body.data?.user
+    if (!u) return null
+    return {
+      id: u.id,
+      name: u.name,
+      role: u.role as CurrentUser['role'],
+    }
+  } catch {
+    return null
+  }
+}
+
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const cookieStore = await cookies()
+  const token = cookieStore.get('petpulse_token')?.value
+
+  if (!token) {
+    redirect('/login')
+  }
+
+  const user = await fetchCurrentUser(token)
+
+  if (!user) {
+    // Token present but rejected by the API (expired or revoked).
+    // The middleware can't detect this cheaply, so we handle it here.
+    redirect('/login')
+  }
 
   return (
-    <RoleProvider user={currentUser}>
-      <div className="min-h-screen bg-background">
-        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <div className="flex min-h-screen flex-col md:pl-60">
-          <Topbar onMenuClick={() => setSidebarOpen(true)} />
-          {/* overflow-x-hidden on main ensures the page doesn't scroll horizontally, only the tables do */}
-          <main className="flex-1 overflow-x-hidden p-4 md:p-8">
-            {children}
-          </main>
-        </div>
-      </div>
-    </RoleProvider>
+    <DashboardShell user={user}>
+      {children}
+    </DashboardShell>
   )
 }
